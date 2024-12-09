@@ -1,0 +1,21 @@
+/list
+/history
+/join ✔
+/play <url> ✔
+/skip <amount>/<id>/<user>
+/stop
+/resume
+/leave
+/current
+/shuffle
+/repeat <on/off/times>
+/restart
+/volume <0.0/1.0>
+
+/playlist list
+/playlist <name>
+/playlist play <name>
+/playlist add-track <url>
+/playlist remove-track <id/name>
+/playlist rename <name> <new_name>
+/playlist create <name>
