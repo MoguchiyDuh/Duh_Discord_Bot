@@ -1,17 +1,14 @@
-/list
-/history
+# music commands
+/list ✔
 /join ✔
-/play <url> ✔
-/skip <amount>/<id>/<user>
-/stop
-/resume
-/leave
-/current
+/play <url/name> ✔
+/skip <amount>/<id>/<user> ✔/✔/❌
+/pause ✔ 
+/resume ✔
+/leave ✔
+/current ✔
 /shuffle
-/repeat <on/off/times>
-/restart
-/volume <0.0/1.0>
-
+# playlist commands
 /playlist list
 /playlist <name>
 /playlist play <name>
@@ -19,3 +16,8 @@
 /playlist remove-track <id/name>
 /playlist rename <name> <new_name>
 /playlist create <name>
+# temp channels commands
+/lock ✔
+/unlock ✔
+/limit ✔
+/rename ✔
