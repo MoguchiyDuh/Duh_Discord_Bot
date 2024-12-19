@@ -46,8 +46,6 @@ async def run_bot():
     try:
         await load_cogs()  # Load cogs asynchronously
         await bot.start(DISCORD_TOKEN)
-    except KeyboardInterrupt:
-        print("Bot was stopped by KeyboardInterrupt.")
     except Exception as e:
         print(f"Unexpected error occurred: {e}")
     finally:
@@ -55,4 +53,7 @@ async def run_bot():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())  # Run the bot using asyncio
+    try:
+        asyncio.run(run_bot())  # Run the bot using asyncio
+    except KeyboardInterrupt:
+        print("Keyboard Interrupt detected, exiting...")

@@ -41,7 +41,7 @@ class MusicCog(commands.Cog):
                 await voice_client.disconnect()
                 self._clear_guild_data(guild_id)
                 logger.info(
-                    f"Disconnected from empty channel {voice_client.channel.name}."
+                    f"👋Disconnected from empty channel {voice_client.channel.name}."
                 )
 
     def _clear_guild_data(self, guild_id: int):
@@ -72,9 +72,9 @@ class MusicCog(commands.Cog):
     async def join(self, interaction: discord.Interaction):
         """Join the user's voice channel."""
         if await self.ensure_voice_client(interaction):
-            await interaction.response.send_message("Joined the voice channel!")
+            await interaction.response.send_message("🔊Joined the voice channel!")
 
-    @app_commands.command(name="leave", description="Leave the voice channel.")
+    @app_commands.command(name="leave", description="👋Leave the voice channel.")
     async def leave(self, interaction: discord.Interaction):
         """Leave the voice channel."""
         guild_id = interaction.guild_id
@@ -82,11 +82,11 @@ class MusicCog(commands.Cog):
             await self.voice_clients[guild_id].disconnect()
             self._clear_guild_data(guild_id)
             await interaction.response.send_message(
-                "Disconnected from the voice channel."
+                "👋Disconnected from the voice channel."
             )
         else:
             await interaction.response.send_message(
-                "Not connected to a voice channel.", ephemeral=True
+                "🔌Not connected to a voice channel.", ephemeral=True
             )
 
     # =======================PLAY=======================
@@ -161,7 +161,7 @@ class MusicCog(commands.Cog):
         tracks_found = await source.fetch_by_name(name)
         view = TrackSelectView(tracks=tracks_found)
         embed = discord.Embed(
-            title="Choose the track 🎵",
+            title="🎵Choose the track",
             description="\n".join(
                 [
                     f"{i + 1}. [{track.title}]({track.webpage_url})"
@@ -204,7 +204,7 @@ class MusicCog(commands.Cog):
             )  # Play the audio stream from FFmpegPCMAudio
 
             embed = discord.Embed(
-                title="Now Playing 🎶",
+                title="🎶Now Playing",
                 description=f"{track}",
                 color=discord.Color.blue(),
             )
@@ -220,7 +220,9 @@ class MusicCog(commands.Cog):
         """Skip tracks in the queue."""
         guild_id = interaction.guild_id
         if guild_id not in self.voice_clients:
-            await interaction.response.send_message("Not connected to a voice channel.")
+            await interaction.response.send_message(
+                "🔌Not connected to a voice channel."
+            )
             return
         if not self.voice_clients[guild_id].is_playing():
             await interaction.response.send_message("No track is currently playing.")
@@ -230,19 +232,19 @@ class MusicCog(commands.Cog):
             current_track = self.current_tracks.get(guild_id)
             self.voice_clients[guild_id].stop()
             await interaction.response.send_message(
-                f"Skipped the current track: {current_track.title}"
+                f"⏭️Skipped the current track: {current_track.title}"
             )
         elif range_or_id.isdigit():
             track_id = int(range_or_id)
             if 1 <= track_id <= len(self.queue[guild_id]):
                 skipped_track = self.queue[guild_id].pop(track_id - 1)
                 await interaction.response.send_message(
-                    f"Skipped track: {skipped_track.title}"
+                    f"⏭️Skipped track: {skipped_track.title}"
                 )
             else:
-                await interaction.response.send_message("Invalid track number.")
+                await interaction.response.send_message("❌Invalid track number.")
         else:
-            await interaction.response.send_message("Invalid track number format.")
+            await interaction.response.send_message("❌Invalid track number format.")
 
     # ===================LIST/CURRENT===================
     @app_commands.command(name="list", description="List the current queue.")
@@ -257,7 +259,7 @@ class MusicCog(commands.Cog):
             [f"{i + 1}. {track.title}" for i, track in enumerate(queue)]
         )
         embed = discord.Embed(
-            title="Queue",
+            title="📜Queue",
             description=track_list,
             color=discord.Color.blue(),
         )
@@ -270,7 +272,7 @@ class MusicCog(commands.Cog):
         track = self.current_tracks.get(guild_id)
         if track:
             embed = discord.Embed(
-                title="Now Playing 🎶",
+                title="🎶Now Playing",
                 description=str(track),
                 color=discord.Color.blue(),
             )
@@ -289,7 +291,7 @@ class MusicCog(commands.Cog):
         guild_id = interaction.guild_id
         if guild_id in self.voice_clients and self.voice_clients[guild_id].is_playing():
             self.voice_clients[guild_id].pause()
-            await interaction.response.send_message("Paused the track.")
+            await interaction.response.send_message("⏸️Paused the track.")
         else:
             await interaction.response.send_message("No track is currently playing.")
 
@@ -299,11 +301,13 @@ class MusicCog(commands.Cog):
         guild_id = interaction.guild_id
         if guild_id in self.voice_clients and self.voice_clients[guild_id].is_paused():
             self.voice_clients[guild_id].resume()
-            await interaction.response.send_message("Resumed the track.")
+            await interaction.response.send_message("▶️Resumed the track.")
         else:
             await interaction.response.send_message(
                 "No track is currently paused.",
             )
+
+    # ======================LYRICS======================
 
 
 async def setup(bot):
