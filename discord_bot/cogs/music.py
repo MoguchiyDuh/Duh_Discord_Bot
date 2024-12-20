@@ -1,10 +1,11 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from utils.sources.yt_source import YTSource, Track, TrackSelectView
 import re
-
 import logging
+
+from utils.sources.yt_source import YTSource, Track, TrackSelectView
+from utils.get_lyrics import get_lyrics
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("discord")
@@ -308,6 +309,30 @@ class MusicCog(commands.Cog):
             )
 
     # ======================LYRICS======================
+    @app_commands.command(
+        name="lyrics", description="Get the lyrics of a specific song."
+    )
+    async def get_lyrics(self, interaction: discord.Interaction, track_name: str):
+        """Fetch lyrics for the specified track."""
+        await interaction.response.defer()
+        response = await get_lyrics(track_name)
+
+        if response.error_message:
+            await interaction.followup.send(response.error_message)
+        elif response.status == 404:
+            await interaction.followup.send(f"❌ No lyrics found for **{track_name}**.")
+        elif response.status != 200:
+            await interaction.followup.send(
+                f"❌ Unable to fetch lyrics. Status: {response.status}"
+            )
+        else:
+            embed = discord.Embed(
+                title=f"**{response.title}**",
+                description=response.text + f"\n\n🔗 Full lyrics: {response.url}",
+                color=discord.Color.blue(),
+            )
+
+            await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):
