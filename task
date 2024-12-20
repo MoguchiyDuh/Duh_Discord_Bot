@@ -7,7 +7,7 @@
 /resume ✔
 /leave ✔
 /current ✔
-/shuffle
+/lyrics ✔
 # playlist commands
 /playlist list
 /playlist <name>

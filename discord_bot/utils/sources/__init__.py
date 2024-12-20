@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 from discord import FFmpegPCMAudio
 
 
@@ -11,7 +10,7 @@ class Track:
     duration: int  # Duration in seconds
     webpage_url: str  # webpage url
     audio_url: FFmpegPCMAudio
-    thumbnail: Optional[str] = None  # Optional thumbnail image URL
+    thumbnail: str | None = None  # Optional thumbnail image URL
 
     def __repr__(self):
         return self.title
