@@ -9,13 +9,13 @@
 /current ✔
 /lyrics ✔
 # playlist commands
-/playlist list
-/playlist <name>
-/playlist play <name>
-/playlist add-track <url>
-/playlist remove-track <id/name>
-/playlist rename <name> <new_name>
-/playlist create <name>
+/playlist list ✔
+/playlist tracks <name> ✔
+/playlist play <name> ✔
+/playlist add-track <url> ✔
+/playlist remove-track <id/name> ✔
+/playlist rename <name> <new_name> ✔
+/playlist create <name> ✔
 # temp channels commands
 /lock ✔
 /unlock ✔
