@@ -1,5 +1,8 @@
 import os
+<<<<<<< HEAD
 
+=======
+>>>>>>> f5ed92a (logger, better code, fixes)
 from dotenv import load_dotenv
 
 load_dotenv()

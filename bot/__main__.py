@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import asyncio
 import logging
 import os
@@ -17,10 +18,23 @@ logging.basicConfig(
 )
 base_logger = setup_logger(name="bot", log_to_file=True, log_file=BASE_LOG_FILE_NAME)
 
+=======
+import os
+import discord
+import asyncio
+from discord.ext import commands
+
+from bot.utils.config import DISCORD_TOKEN
+
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+>>>>>>> f5ed92a (logger, better code, fixes)
 
 @bot.event
 async def on_ready():
     """Event handler when the bot is ready."""
+<<<<<<< HEAD
     base_logger.info(f"Logged in as {bot.user}")
     try:
         sync_commands = await bot.tree.sync()
@@ -48,16 +62,34 @@ async def load_cogs():
                 base_logger.info(f"Failed to load cog {cog_name}: {e}")
 
     return cogs_loaded
+=======
+    print(f"Logged in as {bot.user}")
+    try:
+        # Syncing commands
+        sync_commands = await bot.tree.sync()
+        print(f"Synced {len(sync_commands)} commands.")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+>>>>>>> f5ed92a (logger, better code, fixes)
 
 
 async def run_bot():
     """Load cogs and start the bot."""
     try:
+<<<<<<< HEAD
         loaded_cogs = await load_cogs()
         base_logger.info(f"Loaded cogs: {loaded_cogs}")
         await bot.start(DISCORD_TOKEN)
     except Exception as e:
         base_logger.exception(f"Error occurred: {e}")
+=======
+        # await bot.load_extension("bot.cogs.ready")
+        await bot.load_extension("bot.cogs.music")
+        await bot.load_extension("bot.cogs.temp_channels")
+        await bot.start(DISCORD_TOKEN)
+    except Exception as e:
+        print(f"Unexpected error occurred: {e}")
+>>>>>>> f5ed92a (logger, better code, fixes)
     finally:
         await bot.close()
 
