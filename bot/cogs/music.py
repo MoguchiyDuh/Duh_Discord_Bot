@@ -1,15 +1,19 @@
+from bot.utils.logger import discord_logger, bot_logger
 import discord
 from discord.ext import commands
 from discord import app_commands
 import re
-import logging
 
-from utils.sources.yt_source import YTSource, Track, TrackSelectView
-from utils.get_lyrics import get_lyrics
-
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger("discord")
-logger.setLevel(logging.ERROR)
+from bot.services.yt_source import (
+    TrackSelectView,
+    fetch_track_by_url,
+    fetch_track_by_name,
+    fetch_playlist,
+    get_audio,
+    Track,
+    Playlist,
+)
+from bot.services.get_lyrics import get_lyrics
 
 
 class MusicCog(commands.Cog):
@@ -36,8 +40,8 @@ class MusicCog(commands.Cog):
             if voice_client.is_connected() and len(voice_client.channel.members) == 1:
                 await voice_client.disconnect()
                 self.__clear_guild_data(guild_id)
-                logger.info(
-                    f"👋Disconnected from empty channel {voice_client.channel.name}."
+                bot_logger.info(
+                    f"Disconnected from the empty channel {voice_client.channel.id}"
                 )
 
     def __clear_guild_data(self, guild_id: int):
@@ -69,6 +73,7 @@ class MusicCog(commands.Cog):
         """Join the user's voice channel."""
         if await self.ensure_voice_client(interaction):
             await interaction.response.send_message("🔊Joined the voice channel!")
+            bot_logger.info(f"Joined the voice channel {interaction.channel_id}")
 
     @app_commands.command(name="leave", description="👋Leave the voice channel.")
     async def leave(self, interaction: discord.Interaction):
@@ -80,15 +85,18 @@ class MusicCog(commands.Cog):
             await interaction.response.send_message(
                 "👋Disconnected from the voice channel."
             )
+            bot_logger.info(f"Left the voice channel {interaction.channel_id}")
         else:
             await interaction.response.send_message(
                 "🔌Not connected to a voice channel.", ephemeral=True
             )
 
     # =======================PLAY=======================
-    @app_commands.command(name="play", description="Play a track from a URL or name.")
+    @app_commands.command(
+        name="play", description="Play a track/playlist from a URL or by name."
+    )
     async def play(self, interaction: discord.Interaction, name_or_url: str):
-        """Play a song or playlist from a URL (YouTube)."""
+        """Play a track/playlist from a URL or by name."""
         if not await self.ensure_voice_client(interaction):
             return
 
@@ -100,12 +108,28 @@ class MusicCog(commands.Cog):
 
         # If the input is a URL
         if re.match(r"https.*youtu[.]?be", name_or_url):
-            await self.__handle_url(interaction, guild_id, name_or_url)
+            if "playlist" in name_or_url:
+                await self.__handle_playlist(
+                    interaction=interaction, guild_id=guild_id, url=name_or_url
+                )
+            else:
+                await self.__handle_track_by_url(
+                    interaction=interaction, guild_id=guild_id, url=name_or_url
+                )
         else:
-            await self.__handle_search(interaction, guild_id, name_or_url)
+            await self.__handle_track_search(interaction, guild_id, name_or_url)
 
-    async def __send_track_added_message(
-        self, channel: discord.channel, response_text: str, thumbnail: str | None = None
+        if (
+            guild_id not in self.current_tracks
+            or not self.voice_clients[guild_id].is_playing()
+        ):
+            await self.play_next_track(interaction.guild_id, interaction.channel)
+
+    async def __send_added_to_queue_message(
+        self,
+        interaction: discord.Interaction,
+        response_text: str,
+        thumbnail: str | None = None,
     ):
         embed = discord.Embed(
             title="Added to queue",
@@ -114,50 +138,55 @@ class MusicCog(commands.Cog):
         )
         if thumbnail:
             embed.set_thumbnail(url=thumbnail)
-        await channel.send(embed=embed)
+        await interaction.edit_original_response(embed=embed, view=None)
 
-    async def __handle_url(
+    async def __handle_playlist(
         self,
         interaction: discord.Interaction,
         guild_id: int,
         url: str,
     ):
-        """Handle URL input for playing a track or playlist."""
-        thumbnail = None
-        if "playlist" in url:
-            playlist = await YTSource.fetch_playlist(url)
-            self.queue[guild_id].extend(playlist.tracks)
-            response_text = str(playlist)
-        else:
-            track = await YTSource.fetch_track_by_url(url)
-            self.queue[guild_id].append(track)
-            response_text = str(track)
-            thumbnail = track.thumbnail
-
-        await self.__send_track_added_message(
-            interaction.channel, response_text, thumbnail
+        """Handle playlist fetching"""
+        playlist = await fetch_playlist(url)
+        self.queue[guild_id].extend(playlist.tracks)
+        await self.__send_added_to_queue_message(
+            interaction=interaction, response_text=str(playlist)
         )
+        bot_logger.info(f"Playlist added {playlist.url}")
 
-        if (
-            guild_id not in self.current_tracks
-            or not self.voice_clients[guild_id].is_playing()
-        ):
-            await self.play_next_track(interaction.guild, interaction.channel)
+    async def __handle_track_by_url(
+        self,
+        interaction: discord.Interaction,
+        guild_id: int,
+        url: str,
+    ):
+        """Handle track url fetching"""
+        track = await fetch_track_by_url(url)
+        if track is None:
+            await interaction.edit_original_response(content="Unable to add the track")
+            return
+        self.queue[guild_id].append(track)
+        await self.__send_added_to_queue_message(
+            interaction=interaction,
+            response_text=str(track),
+            thumbnail=track.thumbnail,
+        )
+        bot_logger.info(f"Track added {track.url}")
 
-    async def __handle_search(
+    async def __handle_track_search(
         self,
         interaction: discord.Interaction,
         guild_id: int,
         name: str,
     ):
         """Handle track search by name."""
-        tracks_found = await YTSource.fetch_track_by_name(name)
+        tracks_found = await fetch_track_by_name(name)
         view = TrackSelectView(tracks=tracks_found)
         embed = discord.Embed(
             title="🎵Choose the track",
             description="\n".join(
                 [
-                    f"{i + 1}. [{track.title}]({track.webpage_url})"
+                    f"{i + 1}. [{track.title}]({track.url})"
                     for i, track in enumerate(tracks_found)
                 ]
             ),
@@ -165,45 +194,45 @@ class MusicCog(commands.Cog):
         )
         await interaction.edit_original_response(embed=embed, view=view)
         await view.wait()
+        bot_logger.info(f"Track selected {view.selected_track.url}")
 
         if view.selected_track:
-            track = await YTSource.fetch_track_by_url(view.selected_track.webpage_url)
+            track = await fetch_track_by_url(view.selected_track.url)
             self.queue[guild_id].append(track)
-            await interaction.delete_original_response()
 
-            await self.__send_track_added_message(
-                interaction.channel, str(track), track.thumbnail
+            await self.__send_added_to_queue_message(
+                interaction, str(track), track.thumbnail
             )
 
-        if (
-            guild_id not in self.current_tracks
-            or not self.voice_clients[guild_id].is_playing()
-        ):
-            await self.play_next_track(interaction.guild, interaction.channel)
-
-    async def play_next_track(self, guild, channel):
+    async def play_next_track(self, guild_id: int, channel: discord.TextChannel):
         """Play the next track in the queue."""
-        guild_id = guild.id
         if guild_id in self.queue and self.queue[guild_id]:
             track: Track = self.queue[guild_id].pop(0)
             self.current_tracks[guild_id] = track
-
             voice_client = self.voice_clients[guild_id]
-            voice_client.play(
-                await YTSource.get_audio(track.webpage_url),
-                after=lambda e: self.bot.loop.create_task(
-                    self.play_next_track(guild, channel)
-                ),
-            )  # Play the audio stream from FFmpegPCMAudio
 
-            embed = discord.Embed(
-                title="🎶Now Playing",
-                description=f"{track}",
-                color=discord.Color.blue(),
-            )
-            if track.thumbnail:
-                embed.set_thumbnail(url=track.thumbnail)
-            await channel.send(embed=embed)
+            audio = await get_audio(track.url)
+            if audio is None:
+                bot_logger.error(f"Unable to fetch the audio for {track.url}")
+                await channel.send(f"Unable to play the track")
+                await self.play_next_track(guild_id, channel)
+            else:
+                voice_client.play(
+                    audio,
+                    after=lambda e: self.bot.loop.create_task(
+                        self.play_next_track(guild_id, channel)
+                    ),
+                )  # Play the audio stream from FFmpegPCMAudio
+
+                bot_logger.info(f"Playing {track.url}")
+                embed = discord.Embed(
+                    title="🎶Now Playing",
+                    description=str(track),
+                    color=discord.Color.blue(),
+                )
+                if track.thumbnail:
+                    embed.set_thumbnail(url=track.thumbnail)
+                await channel.send(embed=embed)
 
     # =======================SKIP=======================
     @app_commands.command(
@@ -234,6 +263,7 @@ class MusicCog(commands.Cog):
             await interaction.response.send_message(
                 f"⏭️Skipped the current track: {current_track.title}"
             )
+            bot_logger.info(f"Current track skipped {current_track.url}")
         elif range_or_id.isdigit():
             track_id = int(range_or_id)
             if 1 <= track_id <= len(self.queue[guild_id]):
@@ -241,6 +271,7 @@ class MusicCog(commands.Cog):
                 await interaction.response.send_message(
                     f"⏭️Skipped track: {skipped_track.title}"
                 )
+                bot_logger.info(f"Track skipped {skipped_track.url}")
             else:
                 await interaction.response.send_message("❌Invalid track number.")
         else:
@@ -318,11 +349,17 @@ class MusicCog(commands.Cog):
 
         if response.error_message:
             await interaction.followup.send(response.error_message)
+            bot_logger.warning(f"{response.error_message}")
+
         elif response.status == 404:
             await interaction.followup.send(f"❌ No lyrics found for **{track_name}**.")
+            bot_logger.warning(f"No lyrics found for {track_name}")
         elif response.status != 200:
             await interaction.followup.send(
                 f"❌ Unable to fetch lyrics. Status: {response.status}"
+            )
+            bot_logger.error(
+                f"Unable to fetch the lyrics for {track_name} {response.status}"
             )
         else:
             for i, chunk in enumerate(response.text):

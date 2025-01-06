@@ -3,31 +3,10 @@ import discord
 import asyncio
 from discord.ext import commands
 
-from utils.config import DISCORD_TOKEN
+from bot.utils.config import DISCORD_TOKEN
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-async def load_cogs():
-    """Load all cogs from the cogs directory."""
-    cog_directory = os.path.join(os.getcwd(), "cogs")
-    cogs_loaded = []
-
-    for filename in os.listdir(cog_directory):
-        if (
-            filename.endswith(".py")
-            and filename != "__init__.py"
-            and "disabled" not in filename.lower()
-        ):
-            cog_name = f"cogs.{filename[:-3]}"
-            try:
-                await bot.load_extension(cog_name)
-                cogs_loaded.append(cog_name)
-            except Exception as e:
-                print(f"Failed to load cog {cog_name}: {e}")
-
-    return cogs_loaded
 
 
 @bot.event
@@ -45,7 +24,9 @@ async def on_ready():
 async def run_bot():
     """Load cogs and start the bot."""
     try:
-        await load_cogs()  # Load cogs asynchronously
+        # await bot.load_extension("bot.cogs.ready")
+        await bot.load_extension("bot.cogs.music")
+        await bot.load_extension("bot.cogs.temp_channels")
         await bot.start(DISCORD_TOKEN)
     except Exception as e:
         print(f"Unexpected error occurred: {e}")

@@ -1,8 +1,7 @@
 import aiohttp
-from .config import GENIUS_API_KEY
+from bot.utils.config import GENIUS_API_KEY
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
-import re
 
 
 @dataclass
@@ -15,6 +14,9 @@ class Lyrics:
 
 
 async def get_lyrics(track_name: str) -> Lyrics:
+    if GENIUS_API_KEY is None:
+        print("No Genius API key found!")
+        return
     url = f"https://api.genius.com/search?q={track_name}"
     headers = {"Authorization": f"Bearer {GENIUS_API_KEY}"}
     lyrics = Lyrics()

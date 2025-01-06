@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 
 
+# FIXME:
 class TempChannelsGroup(app_commands.Group):
     """Cog for managing temporary voice channels."""
 
@@ -17,6 +18,7 @@ class TempChannelsGroup(app_commands.Group):
         category = discord.utils.get(guild.categories, name="TEMP CHANNELS")
         if category is None:
             category = await guild.create_category("TEMP CHANNELS")
+            print("CREATE CATEGORY")
         return category
 
     async def __create_temp_channel(
@@ -56,14 +58,17 @@ class TempChannelsGroup(app_commands.Group):
     @commands.Cog.listener()
     async def on_ready(self):
         """Ensure the 'TEMP CHANNELS' category and lobby channel exist."""
+        print("ON_READY")
         for guild in self.bot.guilds:
             category = await self.__get_category(guild)
             if not discord.utils.get(category.voice_channels, name="Join to create"):
+                print("CREATE VC")
                 await category.create_voice_channel("Join to create")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         """Create and delete temp channels on user voice state updates."""
+        print("UPDATE")
         if before.channel == after.channel:  # No change in channel
             return
 
