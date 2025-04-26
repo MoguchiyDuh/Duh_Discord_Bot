@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 
 import discord
@@ -12,9 +11,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-logging.basicConfig(
-    level=logging.ERROR, format="%(asctime)s:%(levelname)s:%(name)s: %(message)s"
-)
 base_logger = setup_logger(name="bot", log_to_file=True, log_file=BASE_LOG_FILE_NAME)
 
 
