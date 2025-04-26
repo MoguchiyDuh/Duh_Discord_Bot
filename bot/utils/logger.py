@@ -3,7 +3,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from typing import Literal, Optional
 
-DEFAULT_LOG_LEVEL = "DEBUG"
+DEFAULT_LOG_LEVEL = "INFO"
 
 
 def setup_logger(

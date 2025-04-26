@@ -80,7 +80,6 @@ async def get_lyrics(track_name: str) -> Lyrics:
         except aiohttp.ClientError as e:
             return Lyrics(status=500, error_message=f"Error fetching data: {str(e)}")
 
-        logger.debug(lyrics)
         return lyrics
 
 
