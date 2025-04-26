@@ -1,5 +1,8 @@
 import os
+<<<<<<< HEAD
 
+=======
+>>>>>>> upstream
 from dotenv import load_dotenv
 
 load_dotenv()
