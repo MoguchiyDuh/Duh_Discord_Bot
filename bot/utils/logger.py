@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import logging
 <<<<<<< HEAD
 import sys
@@ -90,3 +91,55 @@ discord_logger.setLevel(logging.INFO)
 yt_source_logger = logging.getLogger("youtube_source")
 yt_source_logger.setLevel(logging.INFO)
 >>>>>>> f5ed92a (logger, better code, fixes)
+=======
+import logging
+import sys
+from logging.handlers import RotatingFileHandler
+from typing import Literal, Optional
+
+DEFAULT_LOG_LEVEL = "INFO"
+BASE_LOG_FILE_NAME = "bot.log"
+
+logging.getLogger("discord").setLevel(logging.ERROR)
+
+
+def setup_logger(
+    name: str,
+    log_level: Literal[
+        "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+    ] = DEFAULT_LOG_LEVEL,
+    log_file: Optional[str] = BASE_LOG_FILE_NAME,
+):
+
+    log_levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+
+    level = log_levels.get(log_level.upper(), logging.INFO)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    format = "[%(levelname)s] %(asctime)s - %(name)s: %(message)s"
+    formatter = logging.Formatter(format)
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
+    console_handler.stream.reconfigure(encoding="utf-8")
+    logger.addHandler(console_handler)
+
+    if log_file:
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+>>>>>>> 489c3f3 (changed to ffmpegOpus, added shuffle, skip, help commands, better playlist handling)

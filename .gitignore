@@ -4,3 +4,4 @@ tests
 .pytest_cache
 *.log
 __pycache__
+pytest.ini
