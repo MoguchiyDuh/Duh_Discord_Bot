@@ -5,3 +5,4 @@ tests
 *.log
 __pycache__
 pytest.ini
+.vscode
