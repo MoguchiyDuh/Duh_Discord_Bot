@@ -17,10 +17,11 @@ if TYPE_CHECKING:
 from . import (
     DISCORD_FFMPEG_OPTIONS,
     EMBED_COLOR,
-    MAX_QUEUE_LENGTH,
     BaseCog,
     channel_allowed,
 )
+
+from bot.utils.config import MAX_QUEUE_LENGTH
 
 
 # ========== MUSIC CLASS ==========
@@ -207,12 +208,23 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     # ========== HELPERS ==========
     async def _cleanup_player(self, guild: discord.Guild):
-        """Clean up player resources for a guild."""
+        """Clean up player resources for a guild with proper error handling."""
         player = self.players.get(guild.id)
         if player:
-            if player.voice_client:
-                await player.voice_client.disconnect()
-            del self.players[guild.id]
+            try:
+                if player.voice_client:
+                    if player.voice_client.is_playing():
+                        player.voice_client.stop()
+                    await asyncio.wait_for(
+                        player.voice_client.disconnect(), timeout=5.0
+                    )
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Voice disconnect timeout in {guild.name}")
+            except Exception as e:
+                self.logger.error(f"Error during voice cleanup in {guild.name}: {e}")
+            finally:
+                player.clear()
+                del self.players[guild.id]
 
     async def _ensure_voice(
         self, interaction: discord.Interaction
@@ -273,12 +285,17 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== PLAY ==========
     @app_commands.command(
         name="play",
-        description="▶️Play music from YouTube. Supports URLs, playlists, or search queries.",
+        description="▶️Play music from YouTube, SoundCloud. Supports URLs, playlists, or search queries.",
     )
     @app_commands.describe(query="YouTube URL, playlist URL, or search query")
     @channel_allowed(__file__)
     async def play(self, interaction: discord.Interaction, query: str):
         """Play music from various sources."""
+
+        if len(query) > 500:
+            await interaction.response.send_message("Query too long.", ephemeral=True)
+            return
+
         self.logger.debug(
             f"User @{interaction.user.name} invoked /play with query: {query}"
         )
@@ -319,31 +336,51 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     async def _handle_playlist(
         self, interaction: discord.Interaction, player: MusicPlayer, playlist_url: str
     ):
-        """Handle playlist URL."""
+        """Handle playlist URL with improved error handling."""
         track_count = 0
         first_track = True
+        failed_tracks = 0
 
-        async for track_url in TrackFetcher.fetch_playlist(playlist_url):
-            if len(player.queue) >= MAX_QUEUE_LENGTH:
-                self.logger.warning("Queue is full")
+        try:
+            async for track_url in TrackFetcher.fetch_playlist(playlist_url):
+                if len(player.queue) >= MAX_QUEUE_LENGTH:
+                    self.logger.warning("Queue is full")
+                    await interaction.followup.send(
+                        f"Queue full! Added {track_count} tracks, skipped {failed_tracks}.",
+                        ephemeral=True,
+                    )
+                    return
+
+                try:
+                    success = await self._add_track_to_queue(
+                        interaction, player, track_url, notify=False
+                    )
+                    if success:
+                        track_count += 1
+                        if first_track and not player.is_active:
+                            first_track = False
+                            await self._play_next(interaction)
+                    else:
+                        failed_tracks += 1
+                except Exception as e:
+                    self.logger.error(f"Error adding track {track_url}: {e}")
+                    failed_tracks += 1
+                    continue
+
+            if track_count > 0:
+                status_msg = f"Added {track_count} tracks from playlist"
+                if failed_tracks > 0:
+                    status_msg += f" ({failed_tracks} failed)"
+                await interaction.followup.send(status_msg)
+            else:
                 await interaction.followup.send(
-                    f"📛 Queue is full! Added {track_count} tracks.",
-                    ephemeral=True,
+                    "No tracks could be added from playlist.", ephemeral=True
                 )
-                return
 
-            success = await self._add_track_to_queue(
-                interaction, player, track_url, notify=False
-            )
-            if success:
-                track_count += 1
-                if first_track and not player.is_active:
-                    first_track = False
-                    await self._play_next(interaction)
-
-        if track_count > 0:
+        except Exception as e:
+            self.logger.error(f"Playlist processing error: {e}", exc_info=True)
             await interaction.followup.send(
-                f"➕ Added {track_count} tracks from playlist"
+                "Error processing playlist.", ephemeral=True
             )
 
     async def _handle_search(
@@ -423,10 +460,11 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         player.current_item = player.queue.pop(0)
 
         try:
-            source = await discord.FFmpegOpusAudio.from_probe(
-                player.current_item.audio_url,
-                **DISCORD_FFMPEG_OPTIONS,
-            )
+            async with asyncio.timeout(30):
+                source = await discord.FFmpegOpusAudio.from_probe(
+                    player.current_item.audio_url,
+                    **DISCORD_FFMPEG_OPTIONS,
+                )
 
             player.voice_client.play(
                 source,
@@ -439,6 +477,13 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
             embed = self._create_now_playing_embed(player)
             await interaction.followup.send(embed=embed)
+
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Timeout creating audio source for {player.current_item.title}"
+            )
+            await interaction.followup.send("Stream creation timeout, skipping track.")
+            await self._play_next(interaction)
 
         except Exception as e:
             self.logger.error(f"Playback error: {e}", exc_info=True)

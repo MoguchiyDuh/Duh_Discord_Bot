@@ -10,3 +10,5 @@ if not DISCORD_TOKEN:
 GENIUS_API_KEY = os.environ.get("GENIUS_API_KEY")
 if not GENIUS_API_KEY:
     raise ValueError("GENIUS_API_KEY environment variable is not set")
+
+MAX_QUEUE_LENGTH = 50

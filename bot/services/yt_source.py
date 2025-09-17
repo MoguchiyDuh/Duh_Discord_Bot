@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 from yt_dlp import YoutubeDL
 
-from bot.cogs import MAX_QUEUE_LENGTH
+from bot.utils.config import MAX_QUEUE_LENGTH
 from bot.utils.logger import setup_logger
 
 MAX_SEARCH_RESULTS = 5
