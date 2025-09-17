@@ -13,7 +13,6 @@ DEFAULT_REQUEST_TIMEOUT = 10
 logger = setup_logger(name="yt_source", log_file="yt-dlp.log")
 
 
-# ========== AUDIO STREAMING ==========
 @dataclass
 class Track:
     """Represents an audio track with metadata."""
@@ -46,36 +45,44 @@ class TrackFetcher:
 
     _ydl_options = {
         "format": "bestaudio/best",
-        "quiet": True,
+        "quiet": False,
+        "no_warnings": True,
         "skip_download": True,
-        "extract_flat": True,
+        "extract_flat": False,
         "socket_timeout": DEFAULT_REQUEST_TIMEOUT,
-        "noplaylist": False,
-        # "external_downloader": "aria2c", # idk if it's working faster or not
-        # "external_downloader_args": ["-x", "16", "-k", "1M"],
+        "noplaylist": True,
     }
 
     @classmethod
     async def __fetch_metadata(
-        cls, query: str, is_playlist: bool = False, full_metadata: bool = False
+        cls, query: str, is_playlist: bool = False, full_metadata: bool = True
     ) -> List[Dict]:
         logger.debug(
             f"Fetching metadata for query: {query}, playlist={is_playlist}, full={full_metadata}"
         )
         options = cls._ydl_options.copy()
-        options["extract_flat"] = not full_metadata
-        options["noplaylist"] = not is_playlist
+
         if is_playlist:
+            options["noplaylist"] = False
             options["playlistend"] = MAX_QUEUE_LENGTH
+            if not full_metadata:
+                options["extract_flat"] = True
+
+        if not full_metadata:
+            options["extract_flat"] = True
 
         def _run() -> List[Dict]:
             try:
                 with YoutubeDL(options) as ydl:
                     info = ydl.extract_info(query, download=False)
                     logger.debug(f"Metadata fetched successfully for: {query}")
-                    if is_playlist:
-                        return info.get("entries", [])
-                    return info.get("entries", [info])
+
+                    if is_playlist and "entries" in info:
+                        return [entry for entry in info["entries"] if entry is not None]
+                    elif "entries" in info:
+                        return [entry for entry in info["entries"] if entry is not None]
+                    else:
+                        return [info] if info else []
             except Exception as e:
                 logger.error(f"yt-dlp failed for '{query}': {e}", exc_info=True)
                 return []
@@ -85,25 +92,39 @@ class TrackFetcher:
     @classmethod
     def __create_track_from_data(cls, data: Dict) -> Track:
         logger.debug(f"Creating Track from data: {data.get('title', 'No Title')}")
+
+        # Handle author URL
         author_url = None
         if uid := data.get("uploader_id"):
             author_url = f"https://youtube.com/channel/{uid}"
         elif ch_url := data.get("channel_url"):
             author_url = ch_url
+        elif up_url := data.get("uploader_url"):
+            author_url = up_url
 
-        duration = (
-            int(data["duration"])
-            if isinstance(data.get("duration"), (str, int, float))
-            else None
-        )
+        # Handle duration
+        duration = None
+        if data.get("duration"):
+            try:
+                duration = int(float(data["duration"]))
+            except (ValueError, TypeError):
+                pass
+
+        # Get the best audio URL
+        audio_url = data.get("url", "")
+        if not audio_url and data.get("formats"):
+            # Find best audio format
+            audio_formats = [f for f in data["formats"] if f.get("acodec") != "none"]
+            if audio_formats:
+                audio_url = audio_formats[0].get("url", "")
 
         track = Track(
             title=data.get("title", "Unknown Title"),
-            url=data.get("webpage_url", data.get("url", "")),
-            audio_url=data.get("url", ""),
+            url=data.get("webpage_url", data.get("original_url", "")),
+            audio_url=audio_url,
             duration=duration,
             thumbnail=data.get("thumbnail"),
-            author=data.get("uploader"),
+            author=data.get("uploader", data.get("channel")),
             author_url=author_url,
         )
         logger.debug(f"Track created: {track.title} [{track.formatted_duration}]")
@@ -115,19 +136,21 @@ class TrackFetcher:
     ) -> Dict[str, str]:
         logger.debug(f"Searching for track by name: '{name}' (max {max_results})")
         query = f"ytsearch{max_results}:{name}"
-        results = await cls.__fetch_metadata(query, full_metadata=True)
+        results = await cls.__fetch_metadata(query, full_metadata=False)
         if not results:
             logger.warning(f"No matches for search: {name}")
             return {}
 
-        titles = [entry["title"] for entry in results if "title" in entry]
-        logger.debug(f"Found {len(titles)} result(s) for '{name}': {titles}")
+        valid_results = {}
+        for entry in results:
+            if entry and "title" in entry:
+                title = entry["title"]
+                url = entry.get("webpage_url", entry.get("url", ""))
+                if url:
+                    valid_results[title] = url
 
-        return {
-            entry["title"]: entry["url"]
-            for entry in results
-            if "title" in entry and "url" in entry
-        }
+        logger.debug(f"Found {len(valid_results)} result(s) for '{name}'")
+        return valid_results
 
     @classmethod
     async def fetch_track_by_url(cls, url: str) -> Optional[Track]:
@@ -149,7 +172,9 @@ class TrackFetcher:
     async def fetch_playlist(cls, playlist_url: str) -> AsyncGenerator[str, None]:
         """Async generator yielding track URLs from a playlist as soon as they're fetched."""
         logger.debug(f"Fetching playlist from URL: {playlist_url}")
-        entries = await cls.__fetch_metadata(playlist_url, is_playlist=True)
+        entries = await cls.__fetch_metadata(
+            playlist_url, is_playlist=True, full_metadata=False
+        )
 
         if not entries:
             logger.warning(f"Empty or invalid playlist: {playlist_url}")
@@ -158,5 +183,8 @@ class TrackFetcher:
         logger.debug(f"Yielding {len(entries)} track(s) from playlist: {playlist_url}")
         for entry in entries:
             if entry and "url" in entry:
-                logger.debug(f"Yielding track URL: {entry['url']}")
-                yield entry["url"]
+                url = entry["url"]
+                if not url.startswith("http"):
+                    url = f"https://www.youtube.com/watch?v={entry.get('id', entry['url'])}"
+                logger.debug(f"Yielding track URL: {url}")
+                yield url

@@ -38,17 +38,6 @@ def _create_handler(
     return handler
 
 
-# Initialize root logger configuration
-logging.basicConfig(
-    level=_get_log_level(DEFAULT_LOG_LEVEL),
-    handlers=[
-        _create_handler(
-            logging.StreamHandler, _get_log_level(DEFAULT_LOG_LEVEL), stream=sys.stdout
-        )
-    ],
-)
-
-
 def setup_logger(
     name: str,
     log_level: Literal[
@@ -61,10 +50,11 @@ def setup_logger(
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # Propagate to root logger to use its handlers
-    logger.propagate = True
+    logger.handlers.clear()
 
-    # Only add file handler if specified (console output is handled by root logger)
+    console_handler = _create_handler(logging.StreamHandler, level, stream=sys.stdout)
+    logger.addHandler(console_handler)
+
     if log_file and not any(
         isinstance(h, RotatingFileHandler) for h in logger.handlers
     ):
@@ -77,5 +67,7 @@ def setup_logger(
             encoding="utf-8",
         )
         logger.addHandler(file_handler)
+
+    logger.propagate = False
 
     return logger

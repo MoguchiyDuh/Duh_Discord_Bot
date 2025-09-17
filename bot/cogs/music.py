@@ -56,12 +56,12 @@ class MusicPlayer:
     def shuffle_queue(self):
         shuffle(self.queue)
 
-    def skip_current(self) -> Optional[str]:
-        if self.voice_client:
+    def skip_current(self) -> Optional[Track]:
+        if self.voice_client and self.voice_client.is_playing():
             self.voice_client.stop()
         return self.current_item
 
-    def skip_index(self, index: int) -> list[Track]:
+    def skip_index(self, index: int) -> List[Track]:
         """
         Skip a specific track.
         Index 0 = current track, 1 = first in queue, etc.
@@ -78,7 +78,7 @@ class MusicPlayer:
             return skipped
         return []
 
-    def skip_range(self, start: int, end: int) -> list[Track]:
+    def skip_range(self, start: int, end: int) -> List[Track]:
         """
         Skip a range of tracks.
         0 = current track, 1 = first in queue, etc.
@@ -100,8 +100,8 @@ class MusicPlayer:
         start_idx = start - 1
         end_idx = min(end - 1, len(self.queue) - 1)
 
-        if start_idx <= end_idx:
-            skipped += self.queue[start_idx : end_idx + 1]
+        if start_idx <= end_idx and start_idx < len(self.queue):
+            skipped.extend(self.queue[start_idx : end_idx + 1])
             del self.queue[start_idx : end_idx + 1]
 
         return skipped
@@ -122,7 +122,7 @@ class TrackSelectionView(ui.View):
         """Add selection buttons for each track."""
         for idx, (title, url) in enumerate(search_results.items(), start=1):
             btn = ui.Button(
-                label=idx,
+                label=str(idx),
                 style=discord.ButtonStyle.primary,
                 custom_id=url,
                 row=(0 if idx <= 3 else 1),
@@ -145,7 +145,6 @@ class TrackSelectionView(ui.View):
                 )
                 return
 
-            # await interaction.response.defer()
             self.selected_track = url
             await self.cleanup(interaction)
 
@@ -285,9 +284,6 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         )
         player = await self._ensure_voice(interaction)
         if not player:
-            await interaction.response.send_message(
-                "🔊 You must be in a voice channel to use this command.", ephemeral=True
-            )
             return
 
         await interaction.response.defer()
@@ -307,13 +303,12 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     await self._handle_playlist(interaction, player, query)
                 else:  # Single track
                     self.logger.debug("Init url track fetching")
-                    await self._add_track_to_queue(interaction, player, query)
+                    success = await self._add_track_to_queue(interaction, player, query)
+                    if success and not player.is_active:
+                        await self._play_next(interaction)
             else:  # Search query
                 self.logger.debug("Init yt track search")
                 await self._handle_search(interaction, player, query)
-
-            if not player.is_active and player.queue:
-                await self._play_next(interaction)
 
         except Exception as e:
             self.logger.error(f"Error in play command: {e}", exc_info=True)
@@ -325,20 +320,31 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         self, interaction: discord.Interaction, player: MusicPlayer, playlist_url: str
     ):
         """Handle playlist URL."""
-        first_iter = True
+        track_count = 0
+        first_track = True
+
         async for track_url in TrackFetcher.fetch_playlist(playlist_url):
             if len(player.queue) >= MAX_QUEUE_LENGTH:
                 self.logger.warning("Queue is full")
                 await interaction.followup.send(
-                    "📛 Queue is full! Cannot add more tracks.",
+                    f"📛 Queue is full! Added {track_count} tracks.",
                     ephemeral=True,
                 )
                 return
 
-            await self._add_track_to_queue(interaction, player, track_url)
-            if not player.is_active and player.queue and first_iter:
-                first_iter = False
-                await self._play_next(interaction)
+            success = await self._add_track_to_queue(
+                interaction, player, track_url, notify=False
+            )
+            if success:
+                track_count += 1
+                if first_track and not player.is_active:
+                    first_track = False
+                    await self._play_next(interaction)
+
+        if track_count > 0:
+            await interaction.followup.send(
+                f"➕ Added {track_count} tracks from playlist"
+            )
 
     async def _handle_search(
         self, interaction: discord.Interaction, player: MusicPlayer, search_query: str
@@ -364,30 +370,37 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         await view.wait()
 
-        if not view.selected_track:
-            return
-        elif view.selected_track == "cancel":
+        if not view.selected_track or view.selected_track == "cancel":
             return
 
-        await self._add_track_to_queue(interaction, player, view.selected_track)
+        success = await self._add_track_to_queue(
+            interaction, player, view.selected_track
+        )
+        if success and not player.is_active:
+            await self._play_next(interaction)
 
     async def _add_track_to_queue(
         self,
         interaction: discord.Interaction,
         player: MusicPlayer,
         track_url: str,
+        notify: bool = True,
     ) -> bool:
         """Add a track to the queue"""
         track = await TrackFetcher.fetch_track_by_url(track_url)
         if track:
             player.queue.append(track)
             self.logger.info(f"Added track to queue: {track.title}")
-            await interaction.followup.send(f"➕ Added to queue: {track.title}")
+            if notify:
+                await interaction.followup.send(f"➕ Added to queue: {track.title}")
+            return True
         else:
-            self.logger.error(f"The track: {track} hasn't been added to queue")
-            await interaction.followup.send(
-                "❌ Could not fetch the track.", ephemeral=True
-            )
+            self.logger.error(f"Failed to fetch track: {track_url}")
+            if notify:
+                await interaction.followup.send(
+                    "❌ Could not fetch the track.", ephemeral=True
+                )
+            return False
 
     async def _play_next(self, interaction: discord.Interaction):
         """Play the next track in the queue."""
@@ -404,6 +417,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if not player.queue:
             self.logger.debug("No tracks in the queue, idling")
             player.state = PlayerState.IDLE
+            player.current_item = None
             return
 
         player.current_item = player.queue.pop(0)
@@ -420,7 +434,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
             player.state = PlayerState.PLAYING
             self.logger.debug(
-                f"Started streaming the track {player.current_item.audio_url}"
+                f"Started streaming the track {player.current_item.title}"
             )
 
             embed = self._create_now_playing_embed(player)
@@ -464,32 +478,37 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
             return
 
-        skipped_titles = []
+        skipped_tracks = []
         if not query:
-            title = player.skip_current()
-            skipped_titles.append(title)
-            self.logger.debug(f"Skipped current track: {title}")
+            # Skip current track
+            track = player.skip_current()
+            if track:
+                skipped_tracks.append(track)
+            self.logger.debug(f"Skipped current track")
         else:
             try:
-                parts = range.split("-")
-                if len(parts) == 1:
-                    index = int(parts[0])
-                    MusicPlayer.skip_index(index)
-                elif len(parts) == 2:
-                    start, end = map(int, parts)
-                    if start > end:
+                if "-" in query:
+                    # Range skip
+                    parts = query.split("-")
+                    if len(parts) == 2:
+                        start, end = map(int, parts)
+                        if start > end:
+                            await interaction.response.send_message(
+                                "❌ Invalid range: start cannot be greater than end.",
+                                ephemeral=True,
+                            )
+                            return
+                        skipped_tracks = player.skip_range(start, end)
+                    else:
                         await interaction.response.send_message(
-                            "❌ Invalid range: start cannot be greater than end.",
+                            "❌ Invalid range format. Use format like '1-3'.",
                             ephemeral=True,
                         )
                         return
-                    MusicPlayer.skip_index(start, end)
                 else:
-                    await interaction.response.send_message(
-                        "❌ Invalid input format. Use a single number or a range (start-end).",
-                        ephemeral=True,
-                    )
-                    return
+                    # Single index skip
+                    index = int(query)
+                    skipped_tracks = player.skip_index(index)
             except ValueError:
                 await interaction.response.send_message(
                     "❌ Invalid number format. Use integers like '0' or ranges like '1-3'.",
@@ -497,19 +516,18 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 )
                 return
 
-        if not skipped_titles:
+        if not skipped_tracks:
             self.logger.debug("No tracks were skipped.")
             await interaction.response.send_message(
                 "ℹ️ No tracks were skipped.", ephemeral=True
             )
             return
 
+        skipped_titles = [track.title for track in skipped_tracks if track]
         await interaction.response.send_message(
-            f"⏭ Skipped {len(skipped_titles)} track(s)"
+            f"⏭ Skipped {len(skipped_tracks)} track(s)"
         )
-        self.logger.info(
-            f"Skipped {', '.join([track.title for track in skipped_titles])}"
-        )
+        self.logger.info(f"Skipped: {', '.join(skipped_titles)}")
 
     # ========== SHOW THE QUEUE ==========
     @app_commands.command(name="queue", description="📜Show the current queue.")
@@ -524,7 +542,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
         queue_list = "\n".join(
             f"**{i+1}.** [{track.title[:50]}]({track.url})"
-            for i, track in enumerate(player.queue)  # Show first 10 tracks
+            for i, track in enumerate(player.queue[:10])  # Show first 10 tracks
         )
 
         embed = discord.Embed(
@@ -539,6 +557,9 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 value=f"[{player.current_item.title}]({player.current_item.url})",
                 inline=False,
             )
+
+        if len(player.queue) > 10:
+            embed.set_footer(text=f"... and {len(player.queue) - 10} more tracks")
 
         await interaction.response.send_message(embed=embed)
 
@@ -556,7 +577,11 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if track.author:
             embed.add_field(
                 name="Author",
-                value=f"[{track.author}]({track.author_url})",
+                value=(
+                    f"[{track.author}]({track.author_url})"
+                    if track.author_url
+                    else track.author
+                ),
                 inline=True,
             )
         if track.duration:
@@ -726,17 +751,17 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
         try:
             response = await get_lyrics(track_name=query)
+            # Send lyrics in chunks to avoid message length limits
+            for i, chunk in enumerate(response.text):
+                embed = discord.Embed(
+                    title=f"🎵 {response.title}" if i == 0 else None,
+                    description=chunk,
+                    color=EMBED_COLOR,
+                )
+                await interaction.followup.send(embed=embed)
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to fetch lyrics")
-
-        # Send lyrics in chunks to avoid message length limits
-        for i, chunk in enumerate(response.text):
-            embed = discord.Embed(
-                title=f"🎵 {response.title}" if i == 0 else None,
-                description=chunk,
-                color=EMBED_COLOR,
-            )
-            await interaction.followup.send(embed=embed)
+            self.logger.error(f"Failed to fetch lyrics: {e}", exc_info=True)
+            await interaction.followup.send("❌ Failed to fetch lyrics", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
