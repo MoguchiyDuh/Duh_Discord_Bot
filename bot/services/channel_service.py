@@ -23,7 +23,7 @@ class ChannelService:
         "temp_channels": ["🎤┃media-hub"],
         "voice_hub": ["Join to Create"],
         "weather": ["🛠️┃bot-commands"],
-        "video": ["🎤┃media-hub"],
+        "randomizer": ["🛠️┃bot-commands"],
     }
 
     CHANNEL_CONFIG = {

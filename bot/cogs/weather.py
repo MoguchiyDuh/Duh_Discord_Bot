@@ -11,14 +11,13 @@ if TYPE_CHECKING:
     from . import MyBot
 
 
-class WeatherCog(BaseCog, commands.GroupCog, name="weather"):
+class WeatherCog(BaseCog, commands.Cog):
     """Weather commands using Open-Meteo API (no key required)."""
 
     def __init__(self, bot: "MyBot"):
         super().__init__(bot)
         self.bot = bot
         self.logger = bot.logger.getChild("weather")
-        # Open-Meteo API - completely free, no API key required
         self.geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
         self.weather_url = "https://api.open-meteo.com/v1/forecast"
 
@@ -42,8 +41,10 @@ class WeatherCog(BaseCog, commands.GroupCog, name="weather"):
             self.logger.error(f"Geocoding error: {e}")
             return None
 
-    @app_commands.command(name="current", description="Get current weather for a city")
-    @app_commands.describe(city="City name to get weather for")
+    @app_commands.command(
+        name="current_weather", description="⛅ Get current weather for a city."
+    )
+    @app_commands.describe(city="City name to get weather for.")
     @channel_allowed(__file__)
     async def current_weather(self, interaction: discord.Interaction, city: str):
         """Get current weather using Open-Meteo API (free, no key required)."""
@@ -55,7 +56,6 @@ class WeatherCog(BaseCog, commands.GroupCog, name="weather"):
 
         await interaction.response.defer()
 
-        # Get coordinates
         coords = await self._get_coordinates(city.strip())
         if not coords:
             await interaction.followup.send(
@@ -66,7 +66,6 @@ class WeatherCog(BaseCog, commands.GroupCog, name="weather"):
         lat, lon, location_name = coords
 
         try:
-            # Get weather data
             params = {
                 "latitude": lat,
                 "longitude": lon,
@@ -90,7 +89,6 @@ class WeatherCog(BaseCog, commands.GroupCog, name="weather"):
                     data = await resp.json()
                     current = data["current"]
 
-                    # Create embed
                     embed = discord.Embed(
                         title=f"Current Weather - {location_name}",
                         color=EMBED_COLOR,

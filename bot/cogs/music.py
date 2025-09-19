@@ -253,7 +253,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         return player
 
     # ========== JOIN ==========
-    @app_commands.command(name="join", description="➕Joins your voice channel.")
+    @app_commands.command(name="join", description="➕ Joins your voice channel.")
     @channel_allowed(__file__)
     async def join(self, interaction: discord.Interaction):
         """Join the user's voice channel."""
@@ -266,7 +266,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     # ========== LEAVE ==========
     @app_commands.command(
-        name="leave", description="🚪Leaves the voice channel and clears the queue."
+        name="leave", description="🚪 Leaves the voice channel and clears the queue."
     )
     @channel_allowed(__file__)
     async def leave(self, interaction: discord.Interaction):
@@ -285,7 +285,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== PLAY ==========
     @app_commands.command(
         name="play",
-        description="▶️Play music from YouTube, SoundCloud. Supports URLs, playlists, or search queries.",
+        description="▶️ Play music from YouTube, SoundCloud. Supports URLs, playlists, or search queries.",
     )
     @app_commands.describe(query="YouTube URL, playlist URL, or search query")
     @channel_allowed(__file__)
@@ -505,7 +505,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         asyncio.run_coroutine_threadsafe(self._play_next(interaction), self.bot.loop)
 
     # ========== SKIP ==========
-    @app_commands.command(name="skip", description="⏭️Skip tracks by index or range.")
+    @app_commands.command(name="skip", description="⏭️ Skip tracks by index or range.")
     @app_commands.describe(
         query="Index or range to skip (e.g. '1', '0' current track, '1-3')"
     )
@@ -575,7 +575,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         self.logger.info(f"Skipped: {', '.join(skipped_titles)}")
 
     # ========== SHOW THE QUEUE ==========
-    @app_commands.command(name="queue", description="📜Show the current queue.")
+    @app_commands.command(name="queue", description="📜 Show the current queue.")
     @channel_allowed(__file__)
     async def queue(self, interaction: discord.Interaction):
         """Display the current queue."""
@@ -646,7 +646,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     # ========== SHOW THE CURRENT TRACK ==========
     @app_commands.command(
-        name="current", description="🎵Show the currently playing track."
+        name="current", description="🎵 Show the currently playing track."
     )
     @channel_allowed(__file__)
     async def current(self, interaction: discord.Interaction):
@@ -663,7 +663,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         await interaction.response.send_message(embed=embed)
 
     # ========== PAUSE ==========
-    @app_commands.command(name="pause", description="⏸️Pause the current track.")
+    @app_commands.command(name="pause", description="⏸️ Pause the current track.")
     @channel_allowed(__file__)
     async def pause(self, interaction: discord.Interaction):
         """Pause playback."""
@@ -688,7 +688,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
 
     # ========== RESUME ==========
-    @app_commands.command(name="resume", description="▶️Resume playback.")
+    @app_commands.command(name="resume", description="▶️ Resume playback.")
     @channel_allowed(__file__)
     async def resume(self, interaction: discord.Interaction):
         """Resume playback."""
@@ -714,7 +714,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     # ========== TOGGLE LOOPING ==========
     @app_commands.command(
-        name="loop", description="🔁Toggle looping of the current track."
+        name="loop", description="🔁 Toggle looping of the current track."
     )
     @channel_allowed(__file__)
     async def loop(self, interaction: discord.Interaction):
@@ -734,7 +734,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         await interaction.response.send_message(f"🔁 Loop {status}.")
 
     # ========== SHUFFLE THE QUEUE ==========
-    @app_commands.command(name="shuffle", description="🔀Shuffle the current queue.")
+    @app_commands.command(name="shuffle", description="🔀 Shuffle the current queue.")
     @channel_allowed(__file__)
     async def shuffle(self, interaction: discord.Interaction):
         self.logger.debug(f"User @{interaction.user.name} invoked /shuffle")
@@ -751,7 +751,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         await interaction.response.send_message("🔀 Queue is shuffled.")
 
     # ========== CLEAR THE QUEUE ==========
-    @app_commands.command(name="clear", description="🧹Clear the queue.")
+    @app_commands.command(name="clear", description="🧹 Clear the queue.")
     @channel_allowed(__file__)
     async def clear(self, interaction: discord.Interaction):
         """Clear the queue."""
@@ -768,7 +768,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         await interaction.response.send_message("🗑️ Queue cleared.")
 
     # ========== GET LYRICS ==========
-    @app_commands.command(name="lyrics", description="📝Get lyrics for a song.")
+    @app_commands.command(name="lyrics", description="📝 Get lyrics for a song.")
     @app_commands.describe(
         query="Song name to search lyrics for (default: current track)"
     )
