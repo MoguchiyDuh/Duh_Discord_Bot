@@ -73,7 +73,9 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
         return True
 
     # ========== TIC TAC TOE ==========
-    @app_commands.command(name="tic-tac-toe", description="Start a game of Tic-Tac-Toe")
+    @app_commands.command(
+        name="tic-tac-toe", description="❌⭕ Start a game of Tic-Tac-Toe"
+    )
     @channel_allowed(__file__)
     async def tic_tac_toe(
         self, interaction: discord.Interaction, opponent: discord.Member
@@ -85,7 +87,7 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
         await game.start(interaction)
 
     # ========== CHESS ==========
-    @app_commands.command(name="chess", description="Start a game of Chess")
+    @app_commands.command(name="chess", description="♟️ Start a game of Chess")
     @channel_allowed(__file__)
     async def chess(self, interaction: discord.Interaction, opponent: discord.Member):
         if not await self.validate_game_start(interaction, opponent):
@@ -95,7 +97,9 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
         await game.start(interaction)
 
     # # ========== CONNECT 4 ==========
-    @app_commands.command(name="connect4", description="Start a game of Connect Four")
+    @app_commands.command(
+        name="connect4", description="🔴🔴🔴🔴 Start a game of Connect Four"
+    )
     @channel_allowed(__file__)
     async def connect4(
         self, interaction: discord.Interaction, opponent: discord.Member

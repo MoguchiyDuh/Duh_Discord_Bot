@@ -19,7 +19,7 @@ class Miscellaneous(BaseCog, commands.Cog):
         self.logger = bot.logger.getChild("misc")
 
     # ========== PING COMMAND ==========
-    @app_commands.command(name="ping", description="🏓Check bot latency")
+    @app_commands.command(name="ping", description="🏓 Check bot latency")
     @channel_allowed(__file__)
     async def ping(self, interaction: discord.Interaction):
         """Check the bot's response time"""
@@ -32,7 +32,7 @@ class Miscellaneous(BaseCog, commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     # ========== CLEAR COMMAND ==========
-    @app_commands.command(name="clear", description="🧹Delete messages")
+    @app_commands.command(name="clear", description="🧹 Delete messages")
     @app_commands.describe(amount="Number of messages to delete (1-100)")
     @app_commands.checks.has_permissions(manage_messages=True)
     async def clear(self, interaction: discord.Interaction, amount: Optional[int] = 1):
@@ -61,7 +61,7 @@ class Miscellaneous(BaseCog, commands.Cog):
             self.logger.error(f"Clear failed: {e}", exc_info=True)
 
     # ========== SERVER STATS ==========
-    @app_commands.command(name="server-stats", description="📊View server statistics")
+    @app_commands.command(name="server-stats", description="📊 View server statistics")
     @channel_allowed(__file__)
     async def server_stats(self, interaction: discord.Interaction):
         """Display server information"""
