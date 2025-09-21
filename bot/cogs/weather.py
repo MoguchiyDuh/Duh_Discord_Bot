@@ -42,11 +42,11 @@ class WeatherCog(BaseCog, commands.Cog):
             return None
 
     @app_commands.command(
-        name="current_weather", description="⛅ Get current weather for a city."
+        name="weather", description="⛅ Get current weather for a city."
     )
     @app_commands.describe(city="City name to get weather for.")
     @channel_allowed(__file__)
-    async def current_weather(self, interaction: discord.Interaction, city: str):
+    async def get_weather(self, interaction: discord.Interaction, city: str):
         """Get current weather using Open-Meteo API (free, no key required)."""
         if not city.strip():
             await interaction.response.send_message(

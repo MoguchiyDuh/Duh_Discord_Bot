@@ -19,7 +19,6 @@ class ChannelService:
         "minigames": ["🎮┃minigames"],
         "miscellaneous": ["🛠️┃bot-commands"],
         "music": ["🎤┃media-hub"],
-        "generandom": ["🛠️┃bot-commands"],
         "temp_channels": ["🎤┃media-hub"],
         "voice_hub": ["Join to Create"],
         "weather": ["🛠️┃bot-commands"],
