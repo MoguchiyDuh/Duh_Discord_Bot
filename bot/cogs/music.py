@@ -476,7 +476,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
 
             embed = self._create_now_playing_embed(player)
-            await interaction.followup.send(embed=embed)
+            await interaction.channel.send(embed=embed)
 
         except asyncio.TimeoutError:
             self.logger.error(

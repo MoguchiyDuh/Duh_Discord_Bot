@@ -51,6 +51,7 @@ class TrackFetcher:
         "extract_flat": False,
         "socket_timeout": DEFAULT_REQUEST_TIMEOUT,
         "noplaylist": True,
+        "cookiefile": "./cookies.txt",
     }
 
     @classmethod

@@ -201,9 +201,23 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         secrets.SystemRandom().shuffle(password)
         password = "".join(password)
 
-        await interaction.response.send_message(
-            f"Password Generated: ||```{password}```||"
+        embed = discord.Embed(
+            title="🔐 Secure Password Generated", color=discord.Color.blue()
         )
+        embed.add_field(name="Your Password", value=f"||`{password}`||", inline=False)
+        embed.add_field(
+            name="Specifications",
+            value=(
+                f"**Length:** {length}\n"
+                f"**Contains:** "
+                f"{'A-Z, ' if include_uppercase else ''}"
+                f"{'0-9, ' if include_digits else ''}"
+                f"{'!@#, ' if include_special else ''}"
+                "a-z"
+            ),
+            inline=False,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ========== COLOR ==========
     @app_commands.command(

@@ -96,7 +96,7 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
         game = Chess(self, [interaction.user, opponent])
         await game.start(interaction)
 
-    # # ========== CONNECT 4 ==========
+    # ========== CONNECT 4 ==========
     @app_commands.command(
         name="connect4", description="🔴🔴🔴🔴 Start a game of Connect Four"
     )
