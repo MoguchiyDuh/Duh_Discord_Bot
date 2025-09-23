@@ -14,14 +14,9 @@ from bot.services.yt_source import Track, TrackFetcher
 if TYPE_CHECKING:
     from . import MyBot
 
-from . import (
-    DISCORD_FFMPEG_OPTIONS,
-    EMBED_COLOR,
-    BaseCog,
-    channel_allowed,
-)
-
 from bot.utils.config import MAX_QUEUE_LENGTH
+
+from . import DISCORD_FFMPEG_OPTIONS, EMBED_COLOR, BaseCog, channel_allowed
 
 
 # ========== MUSIC CLASS ==========
@@ -795,8 +790,14 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 return
 
         try:
-            response = await get_lyrics(track_name=query)
-            # Send lyrics in chunks to avoid message length limits
+            parts = query.split(" - ", 1)
+            name = parts[0]
+            if len(parts) > 1:
+                artist = parts[1]
+            else:
+                artist = None
+            response = await get_lyrics(track_name=name, artist_name=artist)
+
             for i, chunk in enumerate(response.text):
                 embed = discord.Embed(
                     title=f"🎵 {response.title}" if i == 0 else None,
