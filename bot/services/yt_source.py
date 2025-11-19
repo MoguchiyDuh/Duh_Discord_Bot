@@ -51,7 +51,10 @@ class TrackFetcher:
         "extract_flat": False,
         "socket_timeout": DEFAULT_REQUEST_TIMEOUT,
         "noplaylist": True,
-        "cookiefile": "./cookies.txt",
+        "cookiefile": str(Path(__file__).parent.parent.parent / "cookies.txt"),
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        },
     }
 
     @classmethod

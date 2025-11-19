@@ -1,3 +1,4 @@
+import asyncio
 from io import BytesIO
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -112,11 +113,9 @@ class Chess(Game):
         await super().start(interaction)
         self.view = ChessView(self)
         embed = self._create_status_embed()
-        file = self._render_board()
+        file = await self._render_board()
         embed.set_image(url=f"attachment://{BOARD_FILENAME}")
         self.message = await self.thread.send(embed=embed, view=self.view, file=file)
-        # await interaction.response.send_message(embed=embed, view=self.view, file=file)
-        # self.message = await interaction.original_response()
 
     async def make_move(self, interaction: discord.Interaction, move_str: str) -> None:
         """Process a player's move and update game state."""
@@ -141,7 +140,7 @@ class Chess(Game):
                 await self.handle_game_end()
             else:
                 embed = self._create_status_embed()
-                file = self._render_board()
+                file = await self._render_board()
                 embed.set_image(url=f"attachment://{BOARD_FILENAME}")
                 await self.message.edit(embed=embed, attachments=[file])
 
@@ -164,7 +163,8 @@ class Chess(Game):
                 continue
         return None
 
-    def _render_board(self) -> discord.File:
+    async def _render_board(self) -> discord.File:
+        """Render the chess board as a PNG file (runs SVG conversion in thread pool)."""
         orientation = self.colors[self.current_player]
         svg = chess.svg.board(
             board=self.board,
@@ -172,7 +172,8 @@ class Chess(Game):
             lastmove=self.board.peek() if self.board.move_stack else None,
             check=self.board.king(self.board.turn) if self.board.is_check() else None,
         )
-        png = cairosvg.svg2png(bytestring=svg.encode("utf-8"))
+        # Run blocking cairosvg operation in thread pool
+        png = await asyncio.to_thread(cairosvg.svg2png, bytestring=svg.encode("utf-8"))
         return discord.File(BytesIO(png), filename=BOARD_FILENAME)
 
     def _create_status_embed(self) -> discord.Embed:
@@ -225,12 +226,19 @@ class Chess(Game):
         embed.add_field(name="Move Log", value=self._get_move_log(), inline=False)
         return embed
 
-    async def handle_game_end(self):
+    async def handle_game_end(self) -> None:
         embed = self._create_result_embed()
-        file = self._render_board()
+        file = await self._render_board()
         embed.set_image(url=f"attachment://{BOARD_FILENAME}")
         await self.interaction.channel.send(embed=embed, file=file)
         await self.end_game()
+
+    async def _update_board_state(self) -> None:
+        """Update the board message with current state."""
+        embed = self._create_status_embed()
+        file = await self._render_board()
+        embed.set_image(url=f"attachment://{BOARD_FILENAME}")
+        await self.message.edit(embed=embed, attachments=[file])
 
     def _get_move_log(self) -> str:
         moves = [move.uci() for move in self.board.move_stack]

@@ -101,5 +101,5 @@ class Miscellaneous(BaseCog, commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Miscellaneous(bot))

@@ -209,8 +209,17 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
             f"User @{interaction.user.name} invoked /rename with name: {name}"
         )
 
+        # Sanitize channel name - remove potentially dangerous characters
+        sanitized_name = "".join(c for c in name if c.isalnum() or c in " -_").strip()
+        if not sanitized_name:
+            await interaction.response.send_message(
+                "❌ Invalid channel name. Use alphanumeric characters, spaces, hyphens, or underscores.",
+                ephemeral=True,
+            )
+            return
+
         old_name = channel.name
-        await channel.edit(name=name)
+        await channel.edit(name=sanitized_name)
         self.logger.info(f"Channel #{old_name} renamed to #{channel.name}")
         await interaction.response.send_message(
             f"🏷️ Channel renamed to {name}", ephemeral=True
@@ -315,5 +324,5 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
             )
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(TempChannels(bot))
