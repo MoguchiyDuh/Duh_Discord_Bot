@@ -156,8 +156,14 @@ class Game(ABC):
             await self.interaction.delete_original_response()
 
             del self.cog.active_games[self.interaction.guild_id]
+        except discord.NotFound:
+            # Thread or interaction already deleted
+            self.cog.logger.debug("Thread or interaction not found during cleanup")
+        except KeyError:
+            # Game already removed from active games
+            self.cog.logger.debug("Game already removed from active_games")
         except Exception as e:
-            pass
+            self.cog.logger.error(f"Error during game cleanup: {e}", exc_info=True)
 
     def next_turn(self) -> None:
         """Advance the game to the next player's turn."""

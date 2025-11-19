@@ -63,11 +63,18 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
     @channel_allowed(__file__)
     async def random_choice(self, interaction: discord.Interaction, options: str):
         """Randomly choose one option from the provided list."""
-        options_list = [option.strip() for option in options.split(",")]
+        options_list = [option.strip() for option in options.split(",") if option.strip()]
 
         if len(options_list) < 2:
             await interaction.response.send_message(
-                "Error: Please provide at least two options separated by commas.",
+                "❌ Please provide at least 2 options separated by commas.",
+                ephemeral=True,
+            )
+            return
+
+        if len(options_list) > 100:
+            await interaction.response.send_message(
+                "❌ Too many options (max 100).",
                 ephemeral=True,
             )
             return
@@ -385,5 +392,5 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         await interaction.response.send_message(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(RandomCog(bot))

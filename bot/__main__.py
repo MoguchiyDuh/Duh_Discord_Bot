@@ -65,12 +65,28 @@ class MyBot(commands.Bot):
 
         return loaded
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         """Confirm successful login"""
         if self.user:
             self.logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
             self.logger.info(f"Connected to {len(self.guilds)} guilds")
         await self.ensure_channels()
+
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Clean up resources when bot is removed from a guild"""
+        self.logger.info(f"Removed from guild: {guild.name} (ID: {guild.id})")
+
+        # Clean up music players
+        music_cog = self.get_cog("Music")
+        if music_cog and hasattr(music_cog, "players"):
+            player = music_cog.players.pop(guild.id, None)
+            if player and player.voice_client:
+                await player.voice_client.disconnect()
+
+        # Clean up temp channels
+        temp_channel_cog = self.get_cog("TempChannels")
+        if temp_channel_cog and hasattr(temp_channel_cog, "temp_channels"):
+            temp_channel_cog.temp_channels.pop(guild.id, None)
 
 
 async def main():

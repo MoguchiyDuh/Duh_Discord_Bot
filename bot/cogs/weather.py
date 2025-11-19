@@ -25,7 +25,8 @@ class WeatherCog(BaseCog, commands.Cog):
         """Get coordinates for a city using Open-Meteo geocoding."""
         try:
             params = {"name": city, "count": 1, "language": "en", "format": "json"}
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(self.geocoding_url, params=params) as resp:
                     if resp.status == 200:
                         data = await resp.json()
@@ -78,7 +79,8 @@ class WeatherCog(BaseCog, commands.Cog):
                 "timezone": "auto",
             }
 
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(self.weather_url, params=params) as resp:
                     if resp.status != 200:
                         await interaction.followup.send(
@@ -116,5 +118,5 @@ class WeatherCog(BaseCog, commands.Cog):
             )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(WeatherCog(bot))

@@ -287,8 +287,13 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     async def play(self, interaction: discord.Interaction, query: str):
         """Play music from various sources."""
 
+        # Input validation
+        query = query.strip()
+        if not query:
+            await interaction.response.send_message("❌ Query cannot be empty.", ephemeral=True)
+            return
         if len(query) > 500:
-            await interaction.response.send_message("Query too long.", ephemeral=True)
+            await interaction.response.send_message("❌ Query too long (max 500 characters).", ephemeral=True)
             return
 
         self.logger.debug(
@@ -810,6 +815,6 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             await interaction.followup.send("❌ Failed to fetch lyrics", ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     """Add the cog to the bot."""
     await bot.add_cog(MusicCog(bot))

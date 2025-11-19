@@ -6,9 +6,6 @@ import discord
 from discord.abc import GuildChannel
 from discord.ext import commands
 
-# class NotAllowed
-
-
 T = TypeVar("T", bound="ChannelService")
 
 
