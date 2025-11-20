@@ -9,6 +9,7 @@ A multipurpose Discord bot with music, minigames, temporary voice channels, and 
 - **Temporary Channels**: Auto-created voice channels with owner controls
 - **Weather**: Current conditions using Open-Meteo API (no key required)
 - **Utilities**: Server stats, ping, message clearing
+- **MCP Integration**: Control bot music features via Claude Code MCP server (mcp_integration branch)
 
 ## Quick Start
 
@@ -47,6 +48,55 @@ Commands are restricted to specific channels that the bot creates. All commands 
 ## Installation Notes
 
 The startup scripts handle virtual environment setup and dependency installation automatically. All required Python packages are listed in `requirements.txt`.
+
+## MCP Integration (mcp_integration branch)
+
+This branch includes an HTTP API server for external control via Model Context Protocol (MCP).
+
+### Setup
+
+1. **Bot runs API server on `http://127.0.0.1:8765` automatically**
+
+2. **Configure MCP server in Claude Code** (`~/.claude.json`):
+   ```json
+   {
+     "discord-bot": {
+       "type": "stdio",
+       "command": "/path/to/venv/bin/python",
+       "args": ["/path/to/discord-bot-mcp/server.py"]
+     }
+   }
+   ```
+
+3. **Install MCP dependencies**:
+   ```bash
+   pip install httpx mcp
+   ```
+
+### Available MCP Tools
+
+- `list_guilds` - List all Discord servers
+- `get_player_status` - Get current player status, queue, and track info
+- `search_music` - Search YouTube for tracks
+- `add_to_queue` - Add tracks by URL or search query
+- `skip_track` - Skip current or specific track by index
+- `clear_queue` - Clear all queued tracks
+- `pause_playback` / `resume_playback` - Control playback
+- `shuffle_queue` - Shuffle the queue
+
+### Usage Example
+
+```python
+# From Claude Code with MCP enabled
+# Search for music
+search_music(guild_id="123456", query="lofi hip hop")
+
+# Add to queue
+add_to_queue(guild_id="123456", url="https://youtube.com/watch?v=...")
+
+# Check status
+get_player_status(guild_id="123456")
+```
 
 ## License
 

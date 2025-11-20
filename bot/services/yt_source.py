@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
 
 from yt_dlp import YoutubeDL

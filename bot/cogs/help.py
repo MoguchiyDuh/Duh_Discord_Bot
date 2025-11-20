@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+from discord.ext import commands
 from discord.ui import Select, View
 
 from . import EMBED_COLOR, BaseCog

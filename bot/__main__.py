@@ -5,6 +5,7 @@ from typing import List
 import discord
 from discord.ext import commands
 
+from bot.services.api_server import BotAPIServer
 from bot.services.channel_service import ChannelService
 from bot.utils.config import DISCORD_TOKEN
 from bot.utils.logger import setup_logger
@@ -20,10 +21,14 @@ class MyBot(commands.Bot):
 
         self.logger = setup_logger(name="bot")
         self.channel_service = None
+        self.api_server = BotAPIServer(self)
 
     async def setup_hook(self):
         """Initialize bot services and load extensions"""
         self.channel_service = await ChannelService.create(self)
+
+        # Start API server
+        await self.api_server.start()
 
         loaded = await self.load_cogs()
         self.logger.info(f"Loaded {len(loaded)} cogs: {', '.join(loaded)}")
@@ -97,6 +102,7 @@ async def main():
         bot.logger.critical(f"Fatal error: {e}")
         raise
     finally:
+        await bot.api_server.stop()
         await bot.close()
 
 
