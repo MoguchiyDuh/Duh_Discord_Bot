@@ -160,6 +160,80 @@ class TrackSelectionView(ui.View):
         await self.cleanup()
 
 
+class PlaylistSelectionModal(ui.Modal, title="Select Playlist Range"):
+    """Modal for entering custom playlist selection."""
+
+    selection = ui.TextInput(
+        label="Enter selection",
+        placeholder="e.g., '1' or '1-5' or '1,3,5' or '1-3,7,10-12'",
+        max_length=100,
+    )
+
+    def __init__(self, view: "PlaylistSelectionView"):
+        super().__init__()
+        self.view = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        self.view.selection = self.selection.value
+        await interaction.response.defer()
+        await self.view.cleanup(interaction)
+
+
+class PlaylistSelectionView(ui.View):
+    """Interactive view for selecting which tracks to add from a playlist."""
+
+    def __init__(self, cog: "MusicCog", user_id: int, track_count: int):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.selection: Optional[str] = None
+        self.user_id = user_id
+        self.track_count = track_count
+
+    @ui.button(label="Add All", style=discord.ButtonStyle.success, row=0)
+    async def add_all(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "You didn't initiate this request!", ephemeral=True
+            )
+            return
+        self.selection = "all"
+        await self.cleanup(interaction)
+
+    @ui.button(label="Custom Selection", style=discord.ButtonStyle.primary, row=0)
+    async def custom_selection(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "You didn't initiate this request!", ephemeral=True
+            )
+            return
+        modal = PlaylistSelectionModal(self)
+        await interaction.response.send_modal(modal)
+
+    @ui.button(label="Cancel", style=discord.ButtonStyle.danger, row=0)
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "You didn't initiate this request!", ephemeral=True
+            )
+            return
+        self.selection = "cancel"
+        await self.cleanup(interaction)
+
+    async def cleanup(self, interaction: Optional[discord.Interaction] = None):
+        """Safely remove the view and delete the message"""
+        try:
+            self.stop()
+            if interaction and interaction.message:
+                await interaction.message.delete()
+        except Exception as e:
+            self.cog.logger.error(f"Error during view cleanup: {e}", exc_info=True)
+
+    async def on_timeout(self):
+        """Disable all buttons when the view times out."""
+        self.selection = "cancel"
+        await self.cleanup()
+
+
 # ========== MUSIC COG ==========
 class MusicCog(BaseCog, commands.GroupCog, name="music"):
     """Music commands for playing, managing, and controlling audio playback."""
@@ -333,54 +407,120 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 "❌ An error occurred while processing your request.", ephemeral=True
             )
 
+    def _parse_selection(self, selection: str, max_count: int) -> set[int]:
+        """Parse user selection string into set of indices (1-based)."""
+        indices = set()
+
+        try:
+            parts = selection.replace(" ", "").split(",")
+            for part in parts:
+                if "-" in part:
+                    # Range: "1-5"
+                    start, end = map(int, part.split("-", 1))
+                    if start < 1 or end > max_count or start > end:
+                        continue
+                    indices.update(range(start, end + 1))
+                else:
+                    # Single: "3"
+                    idx = int(part)
+                    if 1 <= idx <= max_count:
+                        indices.add(idx)
+        except ValueError:
+            self.logger.error(f"Invalid selection format: {selection}")
+
+        return indices
+
     async def _handle_playlist(
         self, interaction: discord.Interaction, player: MusicPlayer, playlist_url: str
     ):
-        """Handle playlist URL with improved error handling."""
+        """Handle playlist URL with track selection."""
+        # Collect all track URLs first
+        track_urls = []
+        try:
+            async for track_url in TrackFetcher.fetch_playlist(playlist_url):
+                track_urls.append(track_url)
+        except Exception as e:
+            self.logger.error(f"Failed to fetch playlist: {e}", exc_info=True)
+            await interaction.followup.send(
+                "❌ Failed to fetch playlist.", ephemeral=True
+            )
+            return
+
+        if not track_urls:
+            await interaction.followup.send(
+                "ℹ️ Playlist is empty or unavailable.", ephemeral=True
+            )
+            return
+
+        # Show selection view
+        embed = discord.Embed(
+            title="📜 Playlist Selection",
+            description=f"Found {len(track_urls)} tracks in playlist.\n\nSelect which tracks to add:",
+            color=EMBED_COLOR,
+        )
+        embed.add_field(
+            name="Options",
+            value="• **Add All** - Add all tracks\n• **Custom Selection** - Choose specific tracks or ranges",
+            inline=False,
+        )
+        embed.set_footer(text="Selection will timeout in 60 seconds")
+
+        view = PlaylistSelectionView(self, interaction.user.id, len(track_urls))
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await view.wait()
+
+        if not view.selection or view.selection == "cancel":
+            return
+
+        # Determine which tracks to add
+        if view.selection == "all":
+            indices_to_add = set(range(1, len(track_urls) + 1))
+        else:
+            indices_to_add = self._parse_selection(view.selection, len(track_urls))
+            if not indices_to_add:
+                await interaction.followup.send(
+                    "❌ Invalid selection format.", ephemeral=True
+                )
+                return
+
+        # Add selected tracks
         track_count = 0
         first_track = True
         failed_tracks = 0
 
-        try:
-            async for track_url in TrackFetcher.fetch_playlist(playlist_url):
-                if len(player.queue) >= MAX_QUEUE_LENGTH:
-                    self.logger.warning("Queue is full")
-                    await interaction.followup.send(
-                        f"Queue full! Added {track_count} tracks, skipped {failed_tracks}.",
-                        ephemeral=True,
-                    )
-                    return
-
-                try:
-                    success = await self._add_track_to_queue(
-                        interaction, player, track_url, notify=False
-                    )
-                    if success:
-                        track_count += 1
-                        if first_track and not player.is_active:
-                            first_track = False
-                            await self._play_next(interaction)
-                    else:
-                        failed_tracks += 1
-                except Exception as e:
-                    self.logger.error(f"Error adding track {track_url}: {e}")
-                    failed_tracks += 1
-                    continue
-
-            if track_count > 0:
-                status_msg = f"Added {track_count} tracks from playlist"
-                if failed_tracks > 0:
-                    status_msg += f" ({failed_tracks} failed)"
-                await interaction.followup.send(status_msg)
-            else:
+        for idx in sorted(indices_to_add):
+            if len(player.queue) >= MAX_QUEUE_LENGTH:
+                self.logger.warning("Queue is full")
                 await interaction.followup.send(
-                    "No tracks could be added from playlist.", ephemeral=True
+                    f"⚠️ Queue full! Added {track_count} tracks, skipped {len(indices_to_add) - track_count}."
                 )
+                return
 
-        except Exception as e:
-            self.logger.error(f"Playlist processing error: {e}", exc_info=True)
+            try:
+                track_url = track_urls[idx - 1]  # Convert to 0-based
+                success = await self._add_track_to_queue(
+                    interaction, player, track_url, notify=False
+                )
+                if success:
+                    track_count += 1
+                    if first_track and not player.is_active:
+                        first_track = False
+                        await self._play_next(interaction)
+                else:
+                    failed_tracks += 1
+            except Exception as e:
+                self.logger.error(f"Error adding track {idx}: {e}")
+                failed_tracks += 1
+                continue
+
+        if track_count > 0:
+            status_msg = f"✅ Added {track_count} track(s) from playlist"
+            if failed_tracks > 0:
+                status_msg += f" ({failed_tracks} failed)"
+            await interaction.followup.send(status_msg)
+        else:
             await interaction.followup.send(
-                "Error processing playlist.", ephemeral=True
+                "❌ No tracks could be added from playlist.", ephemeral=True
             )
 
     async def _handle_search(

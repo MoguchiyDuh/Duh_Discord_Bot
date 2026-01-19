@@ -1,73 +1,79 @@
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
-from typing import Literal, Optional
+from pathlib import Path
+
+from colorama import Fore, Style, init
+
+init(autoreset=True)
+
+COLORS = {
+    "DEBUG": Fore.CYAN,
+    "INFO": Fore.GREEN,
+    "WARNING": Fore.YELLOW,
+    "ERROR": Fore.RED,
+    "CRITICAL": Fore.MAGENTA + Style.BRIGHT,
+}
 
 DEFAULT_LOG_LEVEL = "INFO"
 BASE_LOG_FILE_NAME = "bot.log"
 
 
-def _get_log_level(
-    level_name: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-) -> int:
-    """Helper function to convert log level name to logging level constant."""
-    log_levels = {
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "WARNING": logging.WARNING,
-        "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL,
-    }
-    return log_levels.get(level_name.upper(), logging.INFO)
-
-
-def _create_handler(
-    handler_class,
-    level: int,
-    formatter: logging.Formatter = logging.Formatter(
-        "[%(levelname)s] %(asctime)s - %(name)s: %(message)s"
-    ),
-    **kwargs
-):
-    """Helper function to create and configure a handler."""
-    handler = handler_class(**kwargs)
-    handler.setLevel(level)
-    handler.setFormatter(formatter)
-    if hasattr(handler, "stream") and hasattr(handler.stream, "reconfigure"):
-        handler.stream.reconfigure(encoding="utf-8")
-    return handler
-
-
 def setup_logger(
     name: str,
-    log_level: Literal[
-        "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
-    ] = DEFAULT_LOG_LEVEL,
-    log_file: Optional[str] = BASE_LOG_FILE_NAME,
+    log_level: str = DEFAULT_LOG_LEVEL,
+    log_file: str | None = BASE_LOG_FILE_NAME,
 ) -> logging.Logger:
-    """Set up a logger with the specified name, level, and optional file output."""
-    level = _get_log_level(log_level)
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+    """Logger with colored console output and rotating file handler"""
 
+    logger = logging.getLogger(name)
+
+    # Clear any existing handlers
     logger.handlers.clear()
 
-    console_handler = _create_handler(logging.StreamHandler, level, stream=sys.stdout)
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logger.setLevel(level)
+
+    # Console handler with colors
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+
+    class ColorFormatter(logging.Formatter):
+        def format(self, record):
+            if sys.stdout.isatty():  # Only color in terminal
+                # Make a copy to avoid modifying the original record
+                record = logging.makeLogRecord(record.__dict__)
+                color = COLORS.get(record.levelname, "")
+                record.levelname = f"{color}{record.levelname}{Style.RESET_ALL}"
+                record.msg = f"{color}{record.msg}{Style.RESET_ALL}"
+            return super().format(record)
+
+    console_formatter = ColorFormatter(
+        fmt="[%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+    )
+    console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    if log_file and not any(
-        isinstance(h, RotatingFileHandler) for h in logger.handlers
-    ):
-        file_handler = _create_handler(
-            RotatingFileHandler,
-            level,
-            filename=log_file,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
+    # File handler with rotation (10MB max, 3 backup files)
+    if log_file:
+        log_dir = Path(__file__).parent.parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+
+        log_file_path = log_dir / log_file
+        file_handler = RotatingFileHandler(
+            log_file_path,
+            maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=3,
             encoding="utf-8",
         )
+        file_handler.setLevel(level)
+
+        file_formatter = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
     logger.propagate = False
-
     return logger
