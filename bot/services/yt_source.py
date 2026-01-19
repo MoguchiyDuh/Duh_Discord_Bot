@@ -6,6 +6,7 @@ from yt_dlp import YoutubeDL
 
 from bot.utils.config import MAX_QUEUE_LENGTH
 from bot.utils.logger import setup_logger
+from pathlib import Path
 
 MAX_SEARCH_RESULTS = 5
 DEFAULT_REQUEST_TIMEOUT = 10
