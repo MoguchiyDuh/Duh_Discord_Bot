@@ -17,6 +17,8 @@ class LyricsError(Exception):
 
 @dataclass
 class Lyrics:
+    """Data class representing song lyrics and metadata."""
+
     title: Optional[str] = None
     artists: Optional[str] = None
     text: Optional[List[str]] = None
@@ -50,7 +52,7 @@ def _split_lyrics_into_chunks(text: str, max_chunk_size: int = 4000) -> List[str
 
 
 async def get_lyrics(track_name: str, artist_name: Optional[str] = None) -> Lyrics:
-    """Advanced version with artist name and better error handling."""
+    """Fetch lyrics for a song, optionally by a specific artist."""
     logger.debug(f"Fetching lyrics for: {track_name} by {artist_name or 'any artist'}")
 
     if not GENIUS_API_KEY:

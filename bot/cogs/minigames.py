@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
     """Commands for playing fun minigames like Tic-Tac-Toe."""
 
-    def __init__(self, bot: "MyBot"):
+    def __init__(self, bot: "MyBot") -> None:
         super().__init__(bot)
         self.active_games: Dict[int, "Game"] = {}
         self.bot = bot
         self.logger = bot.logger.getChild("minigames")
 
     # ========== UNLOADER ==========
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         """Clean up resources when the cog is unloaded."""
         for game in list(self.active_games.values()):
             await game.end_game()
@@ -35,7 +35,7 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
         self,
         interaction: discord.Interaction,
         opponents: Union[discord.Member, List[discord.Member]],
-        allow_against_bot=False,
+        allow_against_bot: bool = False,
     ) -> bool:
         """Check if a game can be started."""
         if interaction.channel.id in self.active_games:
@@ -79,7 +79,7 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
     @channel_allowed(__file__)
     async def tic_tac_toe(
         self, interaction: discord.Interaction, opponent: discord.Member
-    ):
+    ) -> None:
         if not await self.validate_game_start(interaction, opponent):
             return
 
@@ -89,7 +89,9 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
     # ========== CHESS ==========
     @app_commands.command(name="chess", description="♟️ Start a game of Chess")
     @channel_allowed(__file__)
-    async def chess(self, interaction: discord.Interaction, opponent: discord.Member):
+    async def chess(
+        self, interaction: discord.Interaction, opponent: discord.Member
+    ) -> None:
         if not await self.validate_game_start(interaction, opponent):
             return
 
@@ -103,7 +105,7 @@ class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
     @channel_allowed(__file__)
     async def connect4(
         self, interaction: discord.Interaction, opponent: discord.Member
-    ):
+    ) -> None:
         if not await self.validate_game_start(interaction, opponent):
             return
 

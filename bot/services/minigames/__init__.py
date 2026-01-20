@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 class Game(ABC):
     """
     Abstract base class for implementing multiplayer games in Discord.
-    Designed for games like Chess, Tic Tac Toe, Connect 4, Mafia, etc.
     """
 
     def __init__(
@@ -60,10 +59,12 @@ class Game(ABC):
             raise ValueError("Player not in game")
         self._current_player_index = self.players.index(player)
 
-    def assign_roles(self, roles: Tuple) -> Dict[discord.Member, Any]:
+    def assign_roles(self, roles: Tuple[Any, ...]) -> Dict[discord.Member, Any]:
         """
-        Assign roles to players randomly and return a mapping of players to roles.
-        Useful for games like Mafia.
+        Assign roles to players randomly.
+
+        Returns:
+            A dictionary mapping players to their assigned roles.
         """
         if len(self.players) != len(roles):
             raise ValueError(f"Expected {len(self.players)} roles, got {len(roles)}")
@@ -94,31 +95,21 @@ class Game(ABC):
     async def make_move(
         self, interaction: discord.Interaction, *args: Any, **kwargs: Any
     ) -> None:
-        """
-        Process a player's move and update game state.
-        Should validate the move, update state, and advance the turn if valid.
-        """
+        """Process a player's move and update game state."""
         raise NotImplementedError
 
     @abstractmethod
     def get_winner(self) -> Optional[Union[discord.Member, List[discord.Member]]]:
-        """
-        Return the winner(s) of the game, or None if there is no winner yet or a draw.
-        """
+        """Return the winner(s) of the game, or None if no winner yet."""
         raise NotImplementedError
 
     @abstractmethod
     def is_game_over(self) -> bool:
-        """
-        Return True if the game has ended (win, draw, or other terminal state).
-        """
+        """Return True if the game has ended."""
         raise NotImplementedError
 
     async def check_turn(self, interaction: discord.Interaction) -> bool:
-        """
-        Verify if the interacting user is the current player.
-        Returns True if it is their turn, otherwise sends an ephemeral message and returns False.
-        """
+        """Verify if the interacting user is the current player."""
         if interaction.user != self.current_player:
             await interaction.response.send_message(
                 "It's not your turn!", ephemeral=True
@@ -127,10 +118,7 @@ class Game(ABC):
         return True
 
     async def check_membership(self, interaction: discord.Interaction) -> bool:
-        """
-        Verify if the interacting user is a player in this game.
-        Returns True if they are, otherwise sends an ephemeral message and returns False.
-        """
+        """Verify if the interacting user is a player in this game."""
         if interaction.user not in self.players:
             await interaction.response.send_message(
                 "You are not a player in this game.", ephemeral=True
@@ -139,10 +127,7 @@ class Game(ABC):
         return True
 
     async def end_game(self) -> None:
-        """
-        Clean up game resources and declare results.
-        Removes the game from active games and stops the view.
-        """
+        """Clean up game resources and declare results."""
         if self.game_over:
             return
 
@@ -172,9 +157,7 @@ class Game(ABC):
         )
 
     async def handle_timeout(self) -> None:
-        """
-        Handle game timeout by cleaning up and notifying players.
-        """
+        """Handle game timeout by cleaning up and notifying players."""
         if self.game_over:
             return
 
@@ -194,9 +177,7 @@ class Game(ABC):
         await self.end_game()
 
     def _is_image_filename(self, text: Optional[str]) -> bool:
-        """
-        Check if the input string appears to be a filename with a valid image extension.
-        """
+        """Check if the input string appears to be a filename with a valid image extension."""
         if not text or " " in text or "." not in text:
             return False
         image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}

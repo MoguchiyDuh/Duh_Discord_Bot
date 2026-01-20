@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class WeatherCog(BaseCog, commands.Cog):
     """Weather commands using Open-Meteo API (no key required)."""
 
-    def __init__(self, bot: "MyBot"):
+    def __init__(self, bot: "MyBot") -> None:
         super().__init__(bot)
         self.bot = bot
         self.logger = bot.logger.getChild("weather")
@@ -47,7 +47,7 @@ class WeatherCog(BaseCog, commands.Cog):
     )
     @app_commands.describe(city="City name to get weather for.")
     @channel_allowed(__file__)
-    async def get_weather(self, interaction: discord.Interaction, city: str):
+    async def get_weather(self, interaction: discord.Interaction, city: str) -> None:
         """Get current weather using Open-Meteo API (free, no key required)."""
         if not city.strip():
             await interaction.response.send_message(

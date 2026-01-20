@@ -61,7 +61,7 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
             return False
 
     # ========== UNLOADER ==========
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         """Delete tracked temp channels on unload."""
         self.logger.debug("Temp Channels unloader triggered")
         for channel_id, meta in list(self.temp_channels.items()):
@@ -84,7 +84,7 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
         member: discord.Member,
         before: discord.VoiceState,
         after: discord.VoiceState,
-    ):
+    ) -> None:
         """Handle channel creation/deletion"""
         # Create new temp channel
         if (
@@ -129,7 +129,7 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
                     self.temp_channels.pop(before.channel.id, None)
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
         """Cleanup tracking if channel is deleted"""
         if channel.id in self.temp_channels:
             self.logger.warning(f"Voice chat #{channel.name} deleted manually")
@@ -138,7 +138,8 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     # ========== LOCK ==========
     @app_commands.command(name="lock", description="🔒 Lock your temporary channel")
     @channel_allowed(__file__)
-    async def lock(self, interaction: discord.Interaction):
+    async def lock(self, interaction: discord.Interaction) -> None:
+        """Lock the voice channel preventing new users from joining."""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
             return
@@ -159,7 +160,8 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     # ========== UNLOCK ==========
     @app_commands.command(name="unlock", description="🔓 Unlock your temporary channel")
     @channel_allowed(__file__)
-    async def unlock(self, interaction: discord.Interaction):
+    async def unlock(self, interaction: discord.Interaction) -> None:
+        """Unlock the voice channel allowing new users to join."""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
             return
@@ -183,7 +185,8 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     @channel_allowed(__file__)
     async def limit(
         self, interaction: discord.Interaction, limit: app_commands.Range[int, 0, 99]
-    ):
+    ) -> None:
+        """Set a user limit for the temporary channel."""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
             return
@@ -201,7 +204,8 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     @channel_allowed(__file__)
     async def rename(
         self, interaction: discord.Interaction, name: app_commands.Range[str, 1, 100]
-    ):
+    ) -> None:
+        """Rename the temporary channel."""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
             return
@@ -230,7 +234,8 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     @channel_allowed(__file__)
     async def set_status(
         self, interaction: discord.Interaction, status: app_commands.Range[str, 1, 100]
-    ):
+    ) -> None:
+        """Set the voice channel status."""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
             return
@@ -247,7 +252,9 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     # ========== KICK ==========
     @app_commands.command(name="kick", description="👢 Kick a user from your channel")
     @channel_allowed(__file__)
-    async def kick(self, interaction: discord.Interaction, member: discord.Member):
+    async def kick(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
         """Kick a user from your channel"""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
@@ -275,7 +282,9 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
     # ========== MUTE ==========
     @app_commands.command(name="mute", description="🔇 Mute a user in your channel")
     @channel_allowed(__file__)
-    async def mute(self, interaction: discord.Interaction, member: discord.Member):
+    async def mute(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
         """Mute a user in your channel"""
         channel = await self._verify_channel_owner(interaction)
         if not channel:
@@ -300,7 +309,9 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
 
     @app_commands.command(name="unmute", description="🔊 Unmute a user in your channel")
     @channel_allowed(__file__)
-    async def unmute(self, interaction: discord.Interaction, member: discord.Member):
+    async def unmute(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
         """Unmute a user in your channel"""
         channel = await self._verify_channel_owner(interaction)
         if not channel:

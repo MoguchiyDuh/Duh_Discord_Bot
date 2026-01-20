@@ -2,12 +2,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View
+from typing import Callable, Dict, Any, List
 
 from . import EMBED_COLOR, BaseCog
 
 
 class HelpSelect(Select):
-    def __init__(self, create_embed_func):
+    """Dropdown menu for selecting help categories."""
+
+    def __init__(self, create_embed_func: Callable[[str], discord.Embed]) -> None:
         self.create_embed_func = create_embed_func
         options = [
             discord.SelectOption(
@@ -60,28 +63,35 @@ class HelpSelect(Select):
             options=options,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Handle dropdown selection updates."""
         category = self.values[0]
         embed = self.create_embed_func(category)
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class HelpView(View):
-    def __init__(self, create_embed_func):
+    """View containing the help category dropdown."""
+
+    def __init__(self, create_embed_func: Callable[[str], discord.Embed]) -> None:
         super().__init__(timeout=120)
         self.add_item(HelpSelect(create_embed_func))
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
+        """Disable components on timeout."""
         for item in self.children:
             item.disabled = True
-        await self.message.edit(view=self)
+        if self.message:
+            await self.message.edit(view=self)
 
 
 class HelpCog(BaseCog):
-    def __init__(self, bot):
+    """Cog for handling help commands and documentation."""
+
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.logger = bot.logger.getChild("help")
-        self.categories = {
+        self.categories: Dict[str, Dict[str, Any]] = {
             "overview": {
                 "title": "🤖 Duh Discord Bot - Overview",
                 "description": "A multipurpose Discord bot with music, games, and utilities to enhance your server experience!",
@@ -181,6 +191,7 @@ class HelpCog(BaseCog):
         }
 
     def create_embed(self, category: str = "overview") -> discord.Embed:
+        """Create a help embed for a specific category."""
         category_data = self.categories[category]
 
         embed = discord.Embed(
@@ -200,7 +211,7 @@ class HelpCog(BaseCog):
     @app_commands.command(
         name="help", description="❓ Show help menu with all available commands"
     )
-    async def help_command(self, interaction: discord.Interaction):
+    async def help_command(self, interaction: discord.Interaction) -> None:
         """Display an interactive help menu with command categories"""
         embed = self.create_embed()
 
@@ -210,4 +221,5 @@ class HelpCog(BaseCog):
 
 
 async def setup(bot: commands.Bot) -> None:
+    """Setup the Help cog."""
     await bot.add_cog(HelpCog(bot))

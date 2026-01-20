@@ -14,14 +14,14 @@ if TYPE_CHECKING:
 class Miscellaneous(BaseCog, commands.Cog):
     """Miscellaneous commands with channel-specific restrictions"""
 
-    def __init__(self, bot: "MyBot"):
+    def __init__(self, bot: "MyBot") -> None:
         super().__init__(bot)
         self.logger = bot.logger.getChild("misc")
 
     # ========== PING COMMAND ==========
     @app_commands.command(name="ping", description="🏓 Check bot latency")
     @channel_allowed(__file__)
-    async def ping(self, interaction: discord.Interaction):
+    async def ping(self, interaction: discord.Interaction) -> None:
         """Check the bot's response time"""
         latency = round(self.bot.latency * 1000)
         embed = discord.Embed(
@@ -35,7 +35,9 @@ class Miscellaneous(BaseCog, commands.Cog):
     @app_commands.command(name="clear", description="🧹 Delete messages")
     @app_commands.describe(amount="Number of messages to delete (1-100)")
     @app_commands.checks.has_permissions(manage_messages=True)
-    async def clear(self, interaction: discord.Interaction, amount: Optional[int] = 1):
+    async def clear(
+        self, interaction: discord.Interaction, amount: Optional[int] = 1
+    ) -> None:
         """Delete messages (available in any channel)"""
         amount = max(1, min(amount, 100))  # Clamp 1-100
 
@@ -63,7 +65,7 @@ class Miscellaneous(BaseCog, commands.Cog):
     # ========== SERVER STATS ==========
     @app_commands.command(name="server-stats", description="📊 View server statistics")
     @channel_allowed(__file__)
-    async def server_stats(self, interaction: discord.Interaction):
+    async def server_stats(self, interaction: discord.Interaction) -> None:
         """Display server information"""
         guild = interaction.guild
 
