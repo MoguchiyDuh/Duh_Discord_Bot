@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from random import shuffle
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 import discord
 from discord import app_commands, ui
@@ -41,18 +41,22 @@ class MusicPlayer:
 
     @property
     def is_active(self) -> bool:
+        """Check if the player is currently playing or paused."""
         return self.state in (PlayerState.PLAYING, PlayerState.PAUSED)
 
-    def clear(self):
+    def clear(self) -> None:
+        """Clear the queue and reset state."""
         self.queue.clear()
         self.current_item = None
         self.state = PlayerState.IDLE
         self.loop = False
 
-    def shuffle_queue(self):
+    def shuffle_queue(self) -> None:
+        """Shuffle the current queue."""
         shuffle(self.queue)
 
     def skip_current(self) -> Optional[Track]:
+        """Skip the currently playing track."""
         if self.voice_client and self.voice_client.is_playing():
             self.voice_client.stop()
         return self.current_item
@@ -114,7 +118,7 @@ class TrackSelectionView(ui.View):
         self.user_id = user_id
         self._add_buttons(search_results)
 
-    def _add_buttons(self, search_results: Dict[str, str]):
+    def _add_buttons(self, search_results: Dict[str, str]) -> None:
         """Add selection buttons for each track."""
         for idx, (title, url) in enumerate(search_results.items(), start=1):
             btn = ui.Button(
@@ -146,7 +150,7 @@ class TrackSelectionView(ui.View):
 
         return callback
 
-    async def cleanup(self, interaction: Optional[discord.Interaction] = None):
+    async def cleanup(self, interaction: Optional[discord.Interaction] = None) -> None:
         """Safely remove the view and delete the message"""
         try:
             self.stop()
@@ -155,7 +159,7 @@ class TrackSelectionView(ui.View):
         except Exception as e:
             self.cog.logger.error(f"Error during view cleanup: {e}", exc_info=True)
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
         """Disable all buttons when the view times out."""
         await self.cleanup()
 
@@ -173,7 +177,7 @@ class PlaylistSelectionModal(ui.Modal, title="Select Playlist Range"):
         super().__init__()
         self.view = view
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         self.view.selection = self.selection.value
         await interaction.response.defer()
         await self.view.cleanup(interaction)
@@ -190,7 +194,9 @@ class PlaylistSelectionView(ui.View):
         self.track_count = track_count
 
     @ui.button(label="Add All", style=discord.ButtonStyle.success, row=0)
-    async def add_all(self, interaction: discord.Interaction, button: ui.Button):
+    async def add_all(
+        self, interaction: discord.Interaction, button: ui.Button
+    ) -> None:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
                 "You didn't initiate this request!", ephemeral=True
@@ -200,7 +206,9 @@ class PlaylistSelectionView(ui.View):
         await self.cleanup(interaction)
 
     @ui.button(label="Custom Selection", style=discord.ButtonStyle.primary, row=0)
-    async def custom_selection(self, interaction: discord.Interaction, button: ui.Button):
+    async def custom_selection(
+        self, interaction: discord.Interaction, button: ui.Button
+    ) -> None:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
                 "You didn't initiate this request!", ephemeral=True
@@ -210,7 +218,7 @@ class PlaylistSelectionView(ui.View):
         await interaction.response.send_modal(modal)
 
     @ui.button(label="Cancel", style=discord.ButtonStyle.danger, row=0)
-    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button) -> None:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
                 "You didn't initiate this request!", ephemeral=True
@@ -219,7 +227,7 @@ class PlaylistSelectionView(ui.View):
         self.selection = "cancel"
         await self.cleanup(interaction)
 
-    async def cleanup(self, interaction: Optional[discord.Interaction] = None):
+    async def cleanup(self, interaction: Optional[discord.Interaction] = None) -> None:
         """Safely remove the view and delete the message"""
         try:
             self.stop()
@@ -228,7 +236,7 @@ class PlaylistSelectionView(ui.View):
         except Exception as e:
             self.cog.logger.error(f"Error during view cleanup: {e}", exc_info=True)
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
         """Disable all buttons when the view times out."""
         self.selection = "cancel"
         await self.cleanup()
@@ -245,7 +253,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         self.logger = bot.logger.getChild("music")
 
     # ========== UNLOADER ==========
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         """Clean up resources when the cog is unloaded."""
         for player in list(self.players.values()):
             if player.voice_client:
@@ -259,7 +267,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         member: discord.Member,
         before: discord.VoiceState,
         after: discord.VoiceState,
-    ):
+    ) -> None:
         """Handle voice state changes including auto-disconnect."""
         if member == self.bot.user:
             return
@@ -276,7 +284,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
 
     # ========== HELPERS ==========
-    async def _cleanup_player(self, guild: discord.Guild):
+    async def _cleanup_player(self, guild: discord.Guild) -> None:
         """Clean up player resources for a guild with proper error handling."""
         player = self.players.get(guild.id)
         if player:
@@ -324,7 +332,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== JOIN ==========
     @app_commands.command(name="join", description="➕ Joins your voice channel.")
     @channel_allowed(__file__)
-    async def join(self, interaction: discord.Interaction):
+    async def join(self, interaction: discord.Interaction) -> None:
         """Join the user's voice channel."""
         self.logger.debug(f"User @{interaction.user.name} invoked /join")
         player = await self._ensure_voice(interaction)
@@ -338,7 +346,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         name="leave", description="🚪 Leaves the voice channel and clears the queue."
     )
     @channel_allowed(__file__)
-    async def leave(self, interaction: discord.Interaction):
+    async def leave(self, interaction: discord.Interaction) -> None:
         """Leave the voice channel and clean up."""
         self.logger.debug(f"User @{interaction.user.name} invoked /leave")
         player = self.players.get(interaction.guild.id)
@@ -358,16 +366,20 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     )
     @app_commands.describe(query="YouTube URL, playlist URL, or search query")
     @channel_allowed(__file__)
-    async def play(self, interaction: discord.Interaction, query: str):
+    async def play(self, interaction: discord.Interaction, query: str) -> None:
         """Play music from various sources."""
 
         # Input validation
         query = query.strip()
         if not query:
-            await interaction.response.send_message("❌ Query cannot be empty.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Query cannot be empty.", ephemeral=True
+            )
             return
         if len(query) > 500:
-            await interaction.response.send_message("❌ Query too long (max 500 characters).", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Query too long (max 500 characters).", ephemeral=True
+            )
             return
 
         self.logger.debug(
@@ -407,7 +419,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 "❌ An error occurred while processing your request.", ephemeral=True
             )
 
-    def _parse_selection(self, selection: str, max_count: int) -> set[int]:
+    def _parse_selection(self, selection: str, max_count: int) -> Set[int]:
         """Parse user selection string into set of indices (1-based)."""
         indices = set()
 
@@ -432,7 +444,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     async def _handle_playlist(
         self, interaction: discord.Interaction, player: MusicPlayer, playlist_url: str
-    ):
+    ) -> None:
         """Handle playlist URL with track selection."""
         # Collect all track URLs first
         track_urls = []
@@ -525,7 +537,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
     async def _handle_search(
         self, interaction: discord.Interaction, player: MusicPlayer, search_query: str
-    ):
+    ) -> None:
         """Handle search query."""
         search_results = await TrackFetcher.fetch_track_by_name(search_query)
         if not search_results:
@@ -579,7 +591,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 )
             return False
 
-    async def _play_next(self, interaction: discord.Interaction):
+    async def _play_next(self, interaction: discord.Interaction) -> None:
         """Play the next track in the queue."""
         self.logger.debug("Playing the next track")
         guild = interaction.guild
@@ -633,8 +645,10 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             await self._play_next(interaction)
 
     def _handle_playback_complete(
-        self, interaction: discord.Interaction, error: Optional[Exception]
-    ):
+        self,
+        interaction: discord.Interaction,
+        error: Optional[Exception],
+    ) -> None:
         """Handle completion of audio playback."""
         if error:
             self.logger.error(
@@ -650,7 +664,9 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         query="Index or range to skip (e.g. '1', '0' current track, '1-3')"
     )
     @channel_allowed(__file__)
-    async def skip(self, interaction: discord.Interaction, query: Optional[str] = None):
+    async def skip(
+        self, interaction: discord.Interaction, query: Optional[str] = None
+    ) -> None:
         """Skip the current track, a specific track, or a range of tracks."""
         self.logger.debug(
             f"User @{interaction.user.name} invoked /skip with query: {query}"
@@ -717,7 +733,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== SHOW THE QUEUE ==========
     @app_commands.command(name="queue", description="📜 Show the current queue.")
     @channel_allowed(__file__)
-    async def queue(self, interaction: discord.Interaction):
+    async def queue(self, interaction: discord.Interaction) -> None:
         """Display the current queue."""
         self.logger.debug(f"User @{interaction.user.name} invoked /queue")
         player = self.players.get(interaction.guild.id)
@@ -789,7 +805,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         name="current", description="🎵 Show the currently playing track."
     )
     @channel_allowed(__file__)
-    async def current(self, interaction: discord.Interaction):
+    async def current(self, interaction: discord.Interaction) -> None:
         """Display the currently playing track."""
         self.logger.debug(f"User @{interaction.user.name} invoked /current")
         player = self.players.get(interaction.guild.id)
@@ -805,7 +821,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== PAUSE ==========
     @app_commands.command(name="pause", description="⏸️ Pause the current track.")
     @channel_allowed(__file__)
-    async def pause(self, interaction: discord.Interaction):
+    async def pause(self, interaction: discord.Interaction) -> None:
         """Pause playback."""
         self.logger.debug(f"User @{interaction.user.name} invoked /pause")
         player = self.players.get(interaction.guild.id)
@@ -830,7 +846,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== RESUME ==========
     @app_commands.command(name="resume", description="▶️ Resume playback.")
     @channel_allowed(__file__)
-    async def resume(self, interaction: discord.Interaction):
+    async def resume(self, interaction: discord.Interaction) -> None:
         """Resume playback."""
         self.logger.debug(f"User @{interaction.user.name} invoked /resume")
         player = self.players.get(interaction.guild.id)
@@ -857,7 +873,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         name="loop", description="🔁 Toggle looping of the current track."
     )
     @channel_allowed(__file__)
-    async def loop(self, interaction: discord.Interaction):
+    async def loop(self, interaction: discord.Interaction) -> None:
         """Toggle track looping."""
         self.logger.debug(f"User @{interaction.user.name} invoked /loop")
         player = self.players.get(interaction.guild.id)
@@ -876,7 +892,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== SHUFFLE THE QUEUE ==========
     @app_commands.command(name="shuffle", description="🔀 Shuffle the current queue.")
     @channel_allowed(__file__)
-    async def shuffle(self, interaction: discord.Interaction):
+    async def shuffle(self, interaction: discord.Interaction) -> None:
         self.logger.debug(f"User @{interaction.user.name} invoked /shuffle")
         player = self.players.get(interaction.guild.id)
         if not player or not player.queue:
@@ -893,7 +909,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     # ========== CLEAR THE QUEUE ==========
     @app_commands.command(name="clear", description="🧹 Clear the queue.")
     @channel_allowed(__file__)
-    async def clear(self, interaction: discord.Interaction):
+    async def clear(self, interaction: discord.Interaction) -> None:
         """Clear the queue."""
         self.logger.debug(f"User @{interaction.user.name} invoked /clear (music)")
         player = self.players.get(interaction.guild.id)
@@ -915,7 +931,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     @channel_allowed(__file__)
     async def lyrics(
         self, interaction: discord.Interaction, query: Optional[str] = None
-    ):
+    ) -> None:
         """Fetch and display lyrics."""
         self.logger.debug(
             f"User @{interaction.user.name} invoked /lyrics with query {query}"

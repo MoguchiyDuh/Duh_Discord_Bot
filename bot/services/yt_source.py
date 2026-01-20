@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional, Any
 
 from yt_dlp import YoutubeDL
 
@@ -44,7 +44,7 @@ class Track:
 class TrackFetcher:
     """Interface for querying YouTube audio content."""
 
-    _ydl_options = {
+    _ydl_options: Dict[str, Any] = {
         "format": "bestaudio/best",
         "quiet": False,
         "no_warnings": True,
@@ -61,7 +61,8 @@ class TrackFetcher:
     @classmethod
     async def __fetch_metadata(
         cls, query: str, is_playlist: bool = False, full_metadata: bool = True
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
+        """Fetch metadata from YouTube using yt-dlp."""
         logger.debug(
             f"Fetching metadata for query: {query}, playlist={is_playlist}, full={full_metadata}"
         )
@@ -76,7 +77,7 @@ class TrackFetcher:
         if not full_metadata:
             options["extract_flat"] = True
 
-        def _run() -> List[Dict]:
+        def _run() -> List[Dict[str, Any]]:
             try:
                 with YoutubeDL(options) as ydl:
                     info = ydl.extract_info(query, download=False)
@@ -95,7 +96,8 @@ class TrackFetcher:
         return await asyncio.to_thread(_run)
 
     @classmethod
-    def __create_track_from_data(cls, data: Dict) -> Track:
+    def __create_track_from_data(cls, data: Dict[str, Any]) -> Track:
+        """Create a Track object from raw metadata dictionary."""
         logger.debug(f"Creating Track from data: {data.get('title', 'No Title')}")
 
         # Handle author URL
@@ -139,6 +141,7 @@ class TrackFetcher:
     async def fetch_track_by_name(
         cls, name: str, max_results: int = MAX_SEARCH_RESULTS
     ) -> Dict[str, str]:
+        """Search for tracks by name and return a dict of title: url."""
         logger.debug(f"Searching for track by name: '{name}' (max {max_results})")
         query = f"ytsearch{max_results}:{name}"
         results = await cls.__fetch_metadata(query, full_metadata=False)
@@ -159,6 +162,7 @@ class TrackFetcher:
 
     @classmethod
     async def fetch_track_by_url(cls, url: str) -> Optional[Track]:
+        """Fetch full track metadata by URL."""
         logger.debug(f"Fetching track metadata from URL: {url}")
         results = await cls.__fetch_metadata(url, full_metadata=True)
         if not results:

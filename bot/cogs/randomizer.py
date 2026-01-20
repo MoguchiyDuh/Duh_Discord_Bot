@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class RandomCog(BaseCog, commands.GroupCog, name="random"):
     """Commands for generating random numbers and other random utilities."""
 
-    def __init__(self, bot: "MyBot"):
+    def __init__(self, bot: "MyBot") -> None:
         super().__init__(bot)
         self.bot = bot
         self.logger = bot.logger.getChild("random")
@@ -36,7 +36,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
     @channel_allowed(__file__)
     async def random_number(
         self, interaction: discord.Interaction, min_value: int = 1, max_value: int = 100
-    ):
+    ) -> None:
         """Generate a random number in the given range."""
         if min_value > max_value:
             await interaction.response.send_message(
@@ -61,9 +61,13 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
     )
     @app_commands.describe(options="A comma-separated list of options to choose from.")
     @channel_allowed(__file__)
-    async def random_choice(self, interaction: discord.Interaction, options: str):
+    async def random_choice(
+        self, interaction: discord.Interaction, options: str
+    ) -> None:
         """Randomly choose one option from the provided list."""
-        options_list = [option.strip() for option in options.split(",") if option.strip()]
+        options_list = [
+            option.strip() for option in options.split(",") if option.strip()
+        ]
 
         if len(options_list) < 2:
             await interaction.response.send_message(
@@ -94,7 +98,9 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
     # ========== DICE ==========
     @app_commands.command(name="dice", description="🎲 Roll D&D dice")
     @app_commands.describe(dice="Dice notation (e.g., 1d20, 3d6+2, 4d4-1)")
-    async def roll_dice(self, interaction: discord.Interaction, dice: str = "1d20"):
+    async def roll_dice(
+        self, interaction: discord.Interaction, dice: str = "1d20"
+    ) -> None:
         """Roll dice using standard D&D notation"""
         dice_pattern = r"^(\d+)?d(\d+)([+-]\d+)?"
         match = re.match(dice_pattern, dice.lower().strip())
@@ -164,7 +170,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         name="coinflip", description="Flip a coin and get either Heads or Tails."
     )
     @channel_allowed(__file__)
-    async def coinflip(self, interaction: discord.Interaction):
+    async def coinflip(self, interaction: discord.Interaction) -> None:
         """Flip a coin and get either Heads or Tails."""
         result = random.choice(["Heads", "Tails"])
 
@@ -191,7 +197,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         include_uppercase: bool = True,
         include_digits: bool = True,
         include_special: bool = True,
-    ):
+    ) -> None:
         """Generate a secure random password"""
         characters = string.ascii_lowercase
         if include_uppercase:
@@ -219,7 +225,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
                 f"**Contains:** "
                 f"{'A-Z, ' if include_uppercase else ''}"
                 f"{'0-9, ' if include_digits else ''}"
-                f"{'!@#, ' if include_special else ''}"
+                f"!@#, ' if include_special else ''"
                 "a-z"
             ),
             inline=False,
@@ -237,7 +243,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         self,
         interaction: discord.Interaction,
         count: app_commands.Range[int, 1, 10] = 1,
-    ):
+    ) -> None:
         """Generate random colors with hex and RGB values."""
         embed = discord.Embed(title="Color", color=EMBED_COLOR)
 
@@ -281,7 +287,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
         interaction: discord.Interaction,
         words: app_commands.Range[int, 1, 150] = 50,
         format_type: str = "words",
-    ):
+    ) -> None:
         """Generate Lorem Ipsum placeholder text."""
         lorem_words = [
             "lorem",
@@ -385,7 +391,7 @@ class RandomCog(BaseCog, commands.GroupCog, name="random"):
             text = text[:1000].rsplit(" ", 1)[0] + "..."
 
         embed = discord.Embed(title="Lorem Ipsum", color=EMBED_COLOR)
-        embed.add_field(name="Generated Text", value=f"```{text}```", inline=False)
+        embed.add_field(name="Generated Text", value=f"```\n{text}\n```", inline=False)
         embed.add_field(name="Words", value=str(words), inline=True)
         embed.add_field(name="Format", value=format_type.capitalize(), inline=True)
 

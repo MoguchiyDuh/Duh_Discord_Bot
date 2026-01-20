@@ -1,3 +1,5 @@
+"""Logging configuration with colored output and file rotation."""
+
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -7,7 +9,7 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-COLORS = {
+COLORS: dict[str, str] = {
     "DEBUG": Fore.CYAN,
     "INFO": Fore.GREEN,
     "WARNING": Fore.YELLOW,
@@ -15,8 +17,8 @@ COLORS = {
     "CRITICAL": Fore.MAGENTA + Style.BRIGHT,
 }
 
-DEFAULT_LOG_LEVEL = "INFO"
-BASE_LOG_FILE_NAME = "bot.log"
+DEFAULT_LOG_LEVEL: str = "INFO"
+BASE_LOG_FILE_NAME: str = "bot.log"
 
 
 def setup_logger(
@@ -39,7 +41,7 @@ def setup_logger(
     console_handler.setLevel(level)
 
     class ColorFormatter(logging.Formatter):
-        def format(self, record):
+        def format(self, record: logging.LogRecord) -> str:
             if sys.stdout.isatty():  # Only color in terminal
                 # Make a copy to avoid modifying the original record
                 record = logging.makeLogRecord(record.__dict__)

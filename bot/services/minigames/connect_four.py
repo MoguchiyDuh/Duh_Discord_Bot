@@ -17,7 +17,7 @@ COLS = 7
 class Connect4Button(discord.ui.Button["Connect4View"]):
     """A button representing a column in the Connect 4 board."""
 
-    def __init__(self, col: int):
+    def __init__(self, col: int) -> None:
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label=str(col + 1),
@@ -25,13 +25,14 @@ class Connect4Button(discord.ui.Button["Connect4View"]):
         self.col = col
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        """Handle button click."""
         await self.view.game.make_move(interaction, self.col)
 
 
 class Connect4View(discord.ui.View):
     """The interactive view for the Connect 4 board."""
 
-    def __init__(self, game: "Connect4"):
+    def __init__(self, game: "Connect4") -> None:
         super().__init__(timeout=game.timeout)
         self.game = game
         self._add_column_buttons()
@@ -51,6 +52,7 @@ class Connect4View(discord.ui.View):
                 )
 
     async def on_timeout(self) -> None:
+        """Handle view timeout."""
         await self.game.handle_timeout()
 
 
@@ -63,7 +65,7 @@ class Connect4(Game):
         players: List[discord.Member],
         timeout: int = TIMEOUT_SECONDS,
         **kwargs,
-    ):
+    ) -> None:
         if len(players) != 2:
             raise ValueError("Connect 4 requires exactly 2 players.")
         super().__init__(cog, players, timeout, **kwargs)
@@ -155,7 +157,7 @@ class Connect4(Game):
         """Return a string representation of the board."""
         board_str = ""
         # Add column numbers
-        board_str += "".join(f"{i+1}️⃣" for i in range(COLS)) + "\n"
+        board_str += "".join(f"{i+1}️" for i in range(COLS)) + "\n"
         # Add board rows
         for row in self.board:
             board_str += "".join(row) + "\n"

@@ -15,7 +15,7 @@ TIMEOUT_SECONDS = 60 * 3  # 3 minutes
 class TicTacToeButton(discord.ui.Button["TicTacToeView"]):
     """A button representing a cell in the Tic-Tac-Toe board."""
 
-    def __init__(self, row: int, col: int, symbol: str):
+    def __init__(self, row: int, col: int, symbol: str) -> None:
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label=symbol,
@@ -26,13 +26,14 @@ class TicTacToeButton(discord.ui.Button["TicTacToeView"]):
         self.col = col
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        """Handle button click."""
         await self.view.game.make_move(interaction, self.row, self.col)
 
 
 class TicTacToeView(discord.ui.View):
     """The interactive view for the Tic-Tac-Toe board."""
 
-    def __init__(self, game: "TicTacToe"):
+    def __init__(self, game: "TicTacToe") -> None:
         super().__init__(timeout=game.timeout)
         self.game = game
         self.update_board()
@@ -46,6 +47,7 @@ class TicTacToeView(discord.ui.View):
                 self.add_item(button)
 
     async def on_timeout(self) -> None:
+        """Handle view timeout."""
         await self.game.handle_timeout()
 
 
@@ -72,7 +74,7 @@ class TicTacToe(Game):
         players: List[discord.Member],
         timeout: int = TIMEOUT_SECONDS,
         **kwargs,
-    ):
+    ) -> None:
         if len(players) != 2:
             raise ValueError("Tic-Tac-Toe requires exactly 2 players.")
         super().__init__(cog, players, timeout, **kwargs)
@@ -88,7 +90,10 @@ class TicTacToe(Game):
         self.message = await self.thread.send(embed=embed, view=self.view)
 
     async def make_move(
-        self, interaction: discord.Interaction, row: int, col: int
+        self,
+        interaction: discord.Interaction,
+        row: int,
+        col: int,
     ) -> None:
         """Process a player's move and update the game state."""
         async with self.lock:
@@ -114,7 +119,10 @@ class TicTacToe(Game):
             await self.message.edit(embed=embed, view=self.view)
 
     async def _validate_move(
-        self, interaction: discord.Interaction, row: int, col: int
+        self,
+        interaction: discord.Interaction,
+        row: int,
+        col: int,
     ) -> bool:
         """Check if the move is valid and send error messages if not."""
         if not await self.check_membership(interaction):

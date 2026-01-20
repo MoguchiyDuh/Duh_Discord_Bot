@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 import discord
 from discord.abc import GuildChannel
@@ -10,9 +10,11 @@ T = TypeVar("T", bound="ChannelService")
 
 
 class ChannelService:
-    COMMAND_CATEGORIES = ["Commands", "Temporary Channels"]
+    """Service for managing Discord channels and categories."""
 
-    COMMAND_CHANNELS = {
+    COMMAND_CATEGORIES: List[str] = ["Commands", "Temporary Channels"]
+
+    COMMAND_CHANNELS: Dict[str, List[str]] = {
         "minigames": ["🎮┃minigames"],
         "miscellaneous": ["🛠️┃bot-commands"],
         "music": ["🎤┃media-hub"],
@@ -22,7 +24,7 @@ class ChannelService:
         "randomizer": ["🛠️┃bot-commands"],
     }
 
-    CHANNEL_CONFIG = {
+    CHANNEL_CONFIG: Dict[str, Dict[str, Any]] = {
         "🛠️┃bot-commands": {
             "type": "text",
             "category": COMMAND_CATEGORIES[0],
@@ -66,19 +68,20 @@ class ChannelService:
         },
     }
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot) -> None:
+        """Initialize the ChannelService."""
         self.bot = bot
         self.logger: logging.Logger = bot.logger
 
     @classmethod
     async def create(cls: Type[T], bot: commands.Bot) -> T:
-        """Factory method for creating and initializing the service"""
+        """Factory method for creating and initializing the service."""
         instance = cls(bot)
         return instance
 
     @classmethod
-    def get_channel_name(cls, cog_name: str) -> List:
-        """Get the configured channel name for a cog (you may use __file__)"""
+    def get_channel_name(cls, cog_name: str) -> List[str]:
+        """Get the configured channel name for a cog (you may use __file__)."""
         filename = os.path.basename(cog_name)
         cog_name = os.path.splitext(filename)[0].lower()
         return cls.COMMAND_CHANNELS.get(cog_name, [])
@@ -86,7 +89,7 @@ class ChannelService:
     async def ensure_channels(
         self, guild: discord.Guild
     ) -> Dict[str, Optional[GuildChannel]]:
-        """Ensure all required channels exist with proper configuration"""
+        """Ensure all required channels exist with proper configuration."""
         results = {}
 
         try:
@@ -112,7 +115,7 @@ class ChannelService:
     async def _ensure_categories(
         self, guild: discord.Guild
     ) -> Dict[str, discord.CategoryChannel]:
-        """Ensure all required categories exist"""
+        """Ensure all required categories exist."""
         return {
             name: await self._ensure_category(guild, name)
             for name in self.COMMAND_CATEGORIES
@@ -121,7 +124,7 @@ class ChannelService:
     async def _ensure_category(
         self, guild: discord.Guild, name: str
     ) -> discord.CategoryChannel:
-        """Get or create a category channel"""
+        """Get or create a category channel."""
         if category := discord.utils.get(guild.categories, name=name):
             return category
 
@@ -130,9 +133,9 @@ class ChannelService:
         return category
 
     async def _ensure_channel(
-        self, guild: discord.Guild, name: str, config: dict
+        self, guild: discord.Guild, name: str, config: Dict[str, Any]
     ) -> Optional[GuildChannel]:
-        """Ensure a channel exists with correct configuration"""
+        """Ensure a channel exists with correct configuration."""
         if channel := discord.utils.get(
             guild.channels, name=name, category=config.get("category")
         ):
@@ -141,9 +144,9 @@ class ChannelService:
         return await self._create_channel(guild, name, config)
 
     async def _create_channel(
-        self, guild: discord.Guild, name: str, config: dict
+        self, guild: discord.Guild, name: str, config: Dict[str, Any]
     ) -> GuildChannel:
-        """Create a new channel with full configuration"""
+        """Create a new channel with full configuration."""
         overwrites = self._create_overwrites(guild, config.get("overwrites", {}))
         create_args = {
             "name": name,
@@ -161,8 +164,10 @@ class ChannelService:
         self.logger.info(f"Created channel: {name}")
         return channel
 
-    def _create_overwrites(self, guild: discord.Guild, overwrite_config: dict) -> dict:
-        """Generate complete permission overwrites"""
+    def _create_overwrites(
+        self, guild: discord.Guild, overwrite_config: Dict[str, Any]
+    ) -> Dict[Union[discord.Role, discord.Member], discord.PermissionOverwrite]:
+        """Generate complete permission overwrites."""
         overwrites = {}
 
         for role_key, permissions in overwrite_config.items():

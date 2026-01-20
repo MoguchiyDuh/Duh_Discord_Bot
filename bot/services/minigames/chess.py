@@ -8,7 +8,6 @@ import chess.svg
 import discord
 
 from bot.cogs import EMBED_COLOR
-
 from . import Game
 
 if TYPE_CHECKING:
@@ -20,7 +19,9 @@ COLOR_NAMES = {chess.WHITE: "White", chess.BLACK: "Black"}
 
 
 class ChessMoveModal(discord.ui.Modal, title="Make Your Chess Move"):
-    def __init__(self, view: "ChessView"):
+    """Modal for inputting chess moves."""
+
+    def __init__(self, view: "ChessView") -> None:
         super().__init__(timeout=view.game.timeout)
         self.view = view
         self.move_input = discord.ui.TextInput(
@@ -33,15 +34,19 @@ class ChessMoveModal(discord.ui.Modal, title="Make Your Chess Move"):
         self.add_item(self.move_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Handle the move submission."""
         await self.view.game.make_move(interaction, self.move_input.value)
 
 
 class ChessView(discord.ui.View):
-    def __init__(self, game: "Chess"):
+    """View for the Chess game interactions."""
+
+    def __init__(self, game: "Chess") -> None:
         super().__init__(timeout=game.timeout)
         self.game = game
 
     async def validate_interaction(self, interaction: discord.Interaction) -> bool:
+        """Validate if the interaction is from a valid player and it's their turn."""
         return await self.game.check_turn(
             interaction
         ) and await self.game.check_membership(interaction)
@@ -50,6 +55,7 @@ class ChessView(discord.ui.View):
     async def make_move(
         self, interaction: discord.Interaction, _: discord.ui.Button
     ) -> None:
+        """Button to trigger the move modal."""
         if await self.validate_interaction(interaction):
             await interaction.response.send_modal(ChessMoveModal(self))
 
@@ -57,6 +63,7 @@ class ChessView(discord.ui.View):
     async def resign(
         self, interaction: discord.Interaction, _: discord.ui.Button
     ) -> None:
+        """Button to resign the game."""
         if await self.validate_interaction(interaction):
             await self.game.handle_resignation(interaction)
 
@@ -64,10 +71,12 @@ class ChessView(discord.ui.View):
     async def offer_draw(
         self, interaction: discord.Interaction, _: discord.ui.Button
     ) -> None:
+        """Button to offer or accept a draw."""
         if await self.game.check_membership(interaction):
             await self.game.handle_draw_offer(interaction)
 
     async def on_timeout(self) -> None:
+        """Handle view timeout."""
         await self.game.handle_timeout()
 
 
@@ -80,13 +89,13 @@ class Chess(Game):
         players: List[discord.Member],
         timeout: int = TIMEOUT_SECONDS,
         **kwargs,
-    ):
+    ) -> None:
         if len(players) != 2:
             raise ValueError("Chess requires exactly 2 players.")
         super().__init__(cog, players, timeout, **kwargs)
         self.board = chess.Board()
         self.colors: Dict[discord.Member, chess.Color] = self.assign_roles(
-            COLOR_NAMES.keys()
+            tuple(COLOR_NAMES.keys())
         )
         self.draw_offered: Optional[discord.Member] = None
         self.resigned: Optional[discord.Member] = None
@@ -94,18 +103,22 @@ class Chess(Game):
 
     @property
     def white(self) -> discord.Member:
+        """Get the player playing White."""
         return next(p for p, c in self.colors.items() if c == chess.WHITE)
 
     @property
     def black(self) -> discord.Member:
+        """Get the player playing Black."""
         return next(p for p, c in self.colors.items() if c == chess.BLACK)
 
     @property
     def current_color(self) -> chess.Color:
+        """Get the color of the current turn."""
         return self.board.turn
 
     @property
     def current_player(self) -> discord.Member:
+        """Get the Member object of the current player."""
         return self.white if self.current_color == chess.WHITE else self.black
 
     async def start(self, interaction: discord.Interaction) -> None:
@@ -145,6 +158,7 @@ class Chess(Game):
                 await self.message.edit(embed=embed, attachments=[file])
 
     def get_winner(self) -> Optional[discord.Member]:
+        """Determine the winner of the game."""
         if self.resigned:
             return next(p for p in self.players if p != self.resigned)
         if self.board.is_checkmate():
@@ -153,9 +167,11 @@ class Chess(Game):
         return None
 
     def is_game_over(self) -> bool:
-        return self.board.is_game_over() or self.resigned
+        """Check if the game has ended."""
+        return self.board.is_game_over() or self.resigned is not None
 
     def _parse_move(self, move_str: str) -> Optional[chess.Move]:
+        """Parse a move string in SAN or UCI format."""
         for parser in [self.board.parse_san, self.board.parse_uci]:
             try:
                 return parser(move_str.strip())
@@ -177,6 +193,7 @@ class Chess(Game):
         return discord.File(BytesIO(png), filename=BOARD_FILENAME)
 
     def _create_status_embed(self) -> discord.Embed:
+        """Create an embed showing the current game status."""
         player0, player1 = list(self.colors.keys())
         embed = discord.Embed(title="Chess", color=EMBED_COLOR)
         embed.description = (
@@ -197,6 +214,7 @@ class Chess(Game):
         return embed
 
     def _create_result_embed(self) -> discord.Embed:
+        """Create an embed showing the game result."""
         embed = discord.Embed(title="Chess")
         if self.resigned:
             winner = self.get_winner()
@@ -227,6 +245,7 @@ class Chess(Game):
         return embed
 
     async def handle_game_end(self) -> None:
+        """Handle the end of the game, sending results and cleaning up."""
         embed = self._create_result_embed()
         file = await self._render_board()
         embed.set_image(url=f"attachment://{BOARD_FILENAME}")
@@ -241,10 +260,12 @@ class Chess(Game):
         await self.message.edit(embed=embed, attachments=[file])
 
     def _get_move_log(self) -> str:
+        """Get a string representation of the move log."""
         moves = [move.uci() for move in self.board.move_stack]
         return f"```{' '.join(moves) if moves else 'No moves.'}```"
 
     async def handle_resignation(self, interaction: discord.Interaction) -> None:
+        """Handle a player resignation."""
         async with self.lock:
             if self.resigned:
                 await interaction.response.send_message(
@@ -256,6 +277,7 @@ class Chess(Game):
             await self.handle_game_end()
 
     async def handle_draw_offer(self, interaction: discord.Interaction) -> None:
+        """Handle a draw offer or acceptance."""
         async with self.lock:
             if self.draw_offered and self.draw_offered != interaction.user:
                 # Accept draw

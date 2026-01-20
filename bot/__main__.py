@@ -1,3 +1,5 @@
+"""Main entry point for the bot."""
+
 import asyncio
 import os
 from typing import List
@@ -11,7 +13,10 @@ from bot.utils.logger import setup_logger
 
 
 class MyBot(commands.Bot):
-    def __init__(self):
+    """Custom Bot class with automatic cog loading and channel management."""
+
+    def __init__(self) -> None:
+        """Initialize the bot with intents and logger."""
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
@@ -19,9 +24,9 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
         self.logger = setup_logger(name="bot")
-        self.channel_service = None
+        self.channel_service: ChannelService | None = None
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         """Initialize bot services and load extensions"""
         self.channel_service = await ChannelService.create(self)
 
@@ -34,7 +39,7 @@ class MyBot(commands.Bot):
         except Exception as e:
             self.logger.exception(f"Failed to sync commands: {e}")
 
-    async def ensure_channels(self):
+    async def ensure_channels(self) -> None:
         """Ensure channels exist in all guilds"""
         for guild in self.guilds:
             try:
@@ -89,7 +94,8 @@ class MyBot(commands.Bot):
             temp_channel_cog.temp_channels.pop(guild.id, None)
 
 
-async def main():
+async def main() -> None:
+    """Run the bot."""
     bot = MyBot()
     try:
         await bot.start(DISCORD_TOKEN)  # type: ignore
