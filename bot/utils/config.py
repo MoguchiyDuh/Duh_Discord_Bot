@@ -13,4 +13,5 @@ GENIUS_API_KEY: str | None = os.environ.get("GENIUS_API_KEY")
 if not GENIUS_API_KEY:
     raise ValueError("GENIUS_API_KEY environment variable is not set")
 
-MAX_QUEUE_LENGTH: int = 50
+MAX_QUEUE_LENGTH: int = 50  # Limit for Discord bot queue
+MAX_PLAYLIST_FETCH: int = 500  # Limit for yt-dlp playlist metadata fetching

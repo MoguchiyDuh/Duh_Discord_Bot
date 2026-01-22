@@ -1,12 +1,11 @@
 import asyncio
 from dataclasses import dataclass
-from typing import AsyncGenerator, Dict, List, Optional, Any
-
-from yt_dlp import YoutubeDL
-
-from bot.utils.config import MAX_QUEUE_LENGTH
-from bot.utils.logger import setup_logger
 from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from bot.utils.config import MAX_PLAYLIST_FETCH, MAX_QUEUE_LENGTH
+from bot.utils.logger import setup_logger
+from yt_dlp import YoutubeDL
 
 MAX_SEARCH_RESULTS = 5
 DEFAULT_REQUEST_TIMEOUT = 10
@@ -70,7 +69,7 @@ class TrackFetcher:
 
         if is_playlist:
             options["noplaylist"] = False
-            options["playlistend"] = MAX_QUEUE_LENGTH
+            options["playlistend"] = MAX_PLAYLIST_FETCH
             if not full_metadata:
                 options["extract_flat"] = True
 
