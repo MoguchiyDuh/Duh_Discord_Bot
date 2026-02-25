@@ -29,21 +29,22 @@ class BaseCog(commands.Cog):
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:
         """Global error handler for all cog commands"""
+        send = (
+            interaction.followup.send
+            if interaction.response.is_done()
+            else interaction.response.send_message
+        )
         if isinstance(error, app_commands.CheckFailure):
-            await interaction.response.send_message(f"❌ {str(error)}", ephemeral=True)
+            await send(f"❌ {str(error)}", ephemeral=True)
         elif isinstance(error, app_commands.CommandInvokeError):
             self.logger.error(
                 f"Command error in {self.__class__.__name__}: {error.original}",
                 exc_info=True,
             )
-            await interaction.response.send_message(
-                "❌ An error occurred while executing this command", ephemeral=True
-            )
+            await send("❌ An error occurred while executing this command", ephemeral=True)
         else:
             self.logger.error(f"Unexpected error in {self.__class__.__name__}: {error}")
-            await interaction.response.send_message(
-                "❌ An unexpected error occurred", ephemeral=True
-            )
+            await send("❌ An unexpected error occurred", ephemeral=True)
 
 
 # ========== CUSTOM CHECK DECORATOR ==========

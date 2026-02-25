@@ -85,7 +85,7 @@ class Game(ABC):
         for player in self.players:
             await thread.add_user(player)
         self.thread = thread
-        self.cog.active_games[interaction.guild_id] = self
+        self.cog.active_games[interaction.channel_id] = self
         await interaction.response.send_message(
             f"Game started at {thread.mention} for {', '.join([player.mention for player in self.players])}"
         )
@@ -140,7 +140,7 @@ class Game(ABC):
             await self.thread.delete()
             await self.interaction.delete_original_response()
 
-            del self.cog.active_games[self.interaction.guild_id]
+            del self.cog.active_games[self.interaction.channel_id]
         except discord.NotFound:
             # Thread or interaction already deleted
             self.cog.logger.debug("Thread or interaction not found during cleanup")
