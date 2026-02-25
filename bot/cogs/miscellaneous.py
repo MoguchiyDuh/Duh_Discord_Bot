@@ -87,8 +87,7 @@ class Miscellaneous(BaseCog, commands.Cog):
         embed.add_field(
             name="📚 Channels",
             value=(
-                f"Text: {len(guild.text_channels)}\n"
-                f"Voice: {len(guild.voice_channels)}"
+                f"Text: {len(guild.text_channels)}\nVoice: {len(guild.voice_channels)}"
             ),
             inline=True,
         )

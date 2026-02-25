@@ -3,9 +3,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from yt_dlp import YoutubeDL
+
 from bot.utils.config import MAX_PLAYLIST_FETCH, MAX_QUEUE_LENGTH
 from bot.utils.logger import setup_logger
-from yt_dlp import YoutubeDL
 
 MAX_SEARCH_RESULTS = 5
 DEFAULT_REQUEST_TIMEOUT = 10
@@ -40,6 +41,9 @@ class Track:
             return None
 
 
+_COOKIES_PATH = Path(__file__).parent.parent.parent / "cookies.txt"
+
+
 class TrackFetcher:
     """Interface for querying YouTube audio content."""
 
@@ -51,7 +55,7 @@ class TrackFetcher:
         "extract_flat": False,
         "socket_timeout": DEFAULT_REQUEST_TIMEOUT,
         "noplaylist": True,
-        "cookiefile": str(Path(__file__).parent.parent.parent / "cookies.txt"),
+        **({"cookiefile": str(_COOKIES_PATH)} if _COOKIES_PATH.exists() else {}),
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         },

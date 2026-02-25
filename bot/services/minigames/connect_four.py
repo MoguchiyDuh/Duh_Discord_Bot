@@ -157,7 +157,7 @@ class Connect4(Game):
         """Return a string representation of the board."""
         board_str = ""
         # Add column numbers
-        board_str += "".join(f"{i+1}️" for i in range(COLS)) + "\n"
+        board_str += "".join(f"{i + 1}️" for i in range(COLS)) + "\n"
         # Add board rows
         for row in self.board:
             board_str += "".join(row) + "\n"

@@ -22,7 +22,7 @@ class BaseCog(commands.Cog):
 
     def __init__(self, bot: "MyBot") -> None:
         self.bot: "MyBot" = bot
-        self.channel_service: ChannelService = ChannelService(bot)
+        self.channel_service: ChannelService = bot.channel_service
         self.logger = setup_logger("cogs")
 
     async def cog_app_command_error(

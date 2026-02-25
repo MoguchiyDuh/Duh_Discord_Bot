@@ -246,15 +246,21 @@ class PlaylistSelectionView(ui.View):
 class MusicCog(BaseCog, commands.GroupCog, name="music"):
     """Music commands for playing, managing, and controlling audio playback."""
 
+    IDLE_TIMEOUT = 300  # seconds before auto-disconnect when queue is empty
+
     def __init__(self, bot: "MyBot"):
         super().__init__(bot)
         self.bot = bot
         self.players: Dict[int, MusicPlayer] = {}
         self.logger = bot.logger.getChild("music")
+        self._idle_tasks: Dict[int, asyncio.Task] = {}
 
     # ========== UNLOADER ==========
     async def cog_unload(self) -> None:
         """Clean up resources when the cog is unloaded."""
+        for task in self._idle_tasks.values():
+            task.cancel()
+        self._idle_tasks.clear()
         for player in list(self.players.values()):
             if player.voice_client:
                 await player.voice_client.disconnect()
@@ -284,8 +290,24 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
 
     # ========== HELPERS ==========
+    def _cancel_idle_task(self, guild_id: int) -> None:
+        task = self._idle_tasks.pop(guild_id, None)
+        if task:
+            task.cancel()
+
+    def _schedule_idle_disconnect(self, guild: discord.Guild) -> None:
+        self._cancel_idle_task(guild.id)
+
+        async def _disconnect_after_idle() -> None:
+            await asyncio.sleep(self.IDLE_TIMEOUT)
+            self.logger.info(f"Idle timeout reached in {guild.name}, disconnecting")
+            await self._cleanup_player(guild)
+
+        self._idle_tasks[guild.id] = asyncio.create_task(_disconnect_after_idle())
+
     async def _cleanup_player(self, guild: discord.Guild) -> None:
         """Clean up player resources for a guild with proper error handling."""
+        self._cancel_idle_task(guild.id)
         player = self.players.get(guild.id)
         if player:
             try:
@@ -607,8 +629,10 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             self.logger.debug("No tracks in the queue, idling")
             player.state = PlayerState.IDLE
             player.current_item = None
+            self._schedule_idle_disconnect(guild)
             return
 
+        self._cancel_idle_task(guild.id)
         player.current_item = player.queue.pop(0)
 
         try:
@@ -742,7 +766,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             return
 
         queue_list = "\n".join(
-            f"**{i+1}.** [{track.title[:50]}]({track.url})"
+            f"**{i + 1}.** [{track.title[:50]}]({track.url})"
             for i, track in enumerate(player.queue[:10])  # Show first 10 tracks
         )
 

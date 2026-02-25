@@ -1,6 +1,5 @@
 import asyncio
 from dataclasses import dataclass
-from functools import partial
 from typing import List, Optional
 
 import lyricsgenius
@@ -68,18 +67,12 @@ async def get_lyrics(track_name: str, artist_name: Optional[str] = None) -> Lyri
             timeout=15,
         )
 
-        loop = asyncio.get_event_loop()
-
         if artist_name:
             logger.debug(f"Searching for {track_name} by {artist_name}")
-            song = await loop.run_in_executor(
-                None, partial(genius.search_song, track_name, artist_name)
-            )
+            song = await asyncio.to_thread(genius.search_song, track_name, artist_name)
         else:
             logger.debug(f"Searching for: {track_name}")
-            song = await loop.run_in_executor(
-                None, partial(genius.search_song, track_name)
-            )
+            song = await asyncio.to_thread(genius.search_song, track_name)
 
         if not song:
             logger.error(f"No results found for: {track_name}")
