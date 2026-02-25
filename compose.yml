@@ -1,0 +1,8 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      - ./cookies.txt:/app/cookies.txt:ro
+      - ./bot/logs:/app/bot/logs
+    restart: unless-stopped

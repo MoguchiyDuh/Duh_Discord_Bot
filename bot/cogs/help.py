@@ -1,8 +1,9 @@
+from typing import Any, Callable, Dict, List
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View
-from typing import Callable, Dict, Any, List
 
 from . import EMBED_COLOR, BaseCog
 

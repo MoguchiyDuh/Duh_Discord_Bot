@@ -16,9 +16,9 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
 
     def __init__(self, bot: "MyBot"):
         super().__init__(bot)
-        self.temp_channels: Dict[int, Dict[str, int]] = (
-            {}
-        )  # {channel_id: {"owner": user_id, "guild_id": guild_id}}
+        self.temp_channels: Dict[
+            int, Dict[str, int]
+        ] = {}  # {channel_id: {"owner": user_id, "guild_id": guild_id}}
         self.logger = bot.logger.getChild("temp_channels")
 
     # ========== HELPERS ==========

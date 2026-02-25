@@ -1,9 +1,8 @@
 import random
 import re
-from typing import TYPE_CHECKING
-
-import string
 import secrets
+import string
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands

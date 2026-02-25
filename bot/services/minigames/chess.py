@@ -8,6 +8,7 @@ import chess.svg
 import discord
 
 from bot.cogs import EMBED_COLOR
+
 from . import Game
 
 if TYPE_CHECKING:

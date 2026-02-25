@@ -3,7 +3,10 @@ tests
 .env
 .pytest_cache
 *.log
+bot/logs/
 __pycache__
 pytest.ini
 .vscode
 cookies.txt
+.pids
+compose.override.yml

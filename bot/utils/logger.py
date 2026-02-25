@@ -1,6 +1,7 @@
 """Logging configuration with colored output and file rotation."""
 
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -17,7 +18,7 @@ COLORS: dict[str, str] = {
     "CRITICAL": Fore.MAGENTA + Style.BRIGHT,
 }
 
-DEFAULT_LOG_LEVEL: str = "INFO"
+DEFAULT_LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
 BASE_LOG_FILE_NAME: str = "bot.log"
 
 
