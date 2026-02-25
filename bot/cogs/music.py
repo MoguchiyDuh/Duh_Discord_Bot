@@ -430,7 +430,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     self.logger.debug("Init url track fetching")
                     success = await self._add_track_to_queue(interaction, player, query)
                     if success and not player.is_active:
-                        await self._play_next(interaction)
+                        await self._play_next(interaction.guild_id, interaction.channel_id)
             else:  # Search query
                 self.logger.debug("Init yt track search")
                 await self._handle_search(interaction, player, query)
@@ -539,7 +539,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     track_count += 1
                     if first_track and not player.is_active:
                         first_track = False
-                        await self._play_next(interaction)
+                        await self._play_next(interaction.guild_id, interaction.channel_id)
                 else:
                     failed_tracks += 1
             except Exception as e:
@@ -588,7 +588,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             interaction, player, view.selected_track
         )
         if success and not player.is_active:
-            await self._play_next(interaction)
+            await self._play_next(interaction.guild_id, interaction.channel_id)
 
     async def _add_track_to_queue(
         self,
@@ -613,12 +613,13 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 )
             return False
 
-    async def _play_next(self, interaction: discord.Interaction) -> None:
+    async def _play_next(self, guild_id: int, channel_id: int) -> None:
         """Play the next track in the queue."""
         self.logger.debug("Playing the next track")
-        guild = interaction.guild
-        player = self.players.get(guild.id)
-        if not player or not player.voice_client:
+        guild = self.bot.get_guild(guild_id)
+        channel = self.bot.get_channel(channel_id)
+        player = self.players.get(guild_id)
+        if not player or not player.voice_client or not guild:
             return
 
         if player.loop and player.current_item:
@@ -632,7 +633,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             self._schedule_idle_disconnect(guild)
             return
 
-        self._cancel_idle_task(guild.id)
+        self._cancel_idle_task(guild_id)
         player.current_item = player.queue.pop(0)
 
         try:
@@ -644,43 +645,44 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
             player.voice_client.play(
                 source,
-                after=lambda e: self._handle_playback_complete(interaction, e),
+                after=lambda e: self._handle_playback_complete(guild_id, channel_id, e),
             )
             player.state = PlayerState.PLAYING
             self.logger.debug(
                 f"Started streaming the track {player.current_item.title}"
             )
 
-            embed = self._create_now_playing_embed(player)
-            await interaction.channel.send(embed=embed)
+            if channel:
+                embed = self._create_now_playing_embed(player)
+                await channel.send(embed=embed)
 
         except asyncio.TimeoutError:
             self.logger.error(
                 f"Timeout creating audio source for {player.current_item.title}"
             )
-            await interaction.followup.send("Stream creation timeout, skipping track.")
-            await self._play_next(interaction)
+            if channel:
+                await channel.send("⏭️ Stream creation timeout, skipping track.")
+            asyncio.create_task(self._play_next(guild_id, channel_id))
 
         except Exception as e:
             self.logger.error(f"Playback error: {e}", exc_info=True)
-            await interaction.followup.send(
-                "❌ Error occurred while playing the track."
-            )
-            await self._play_next(interaction)
+            if channel:
+                await channel.send("❌ Error occurred while playing the track.")
+            asyncio.create_task(self._play_next(guild_id, channel_id))
 
     def _handle_playback_complete(
         self,
-        interaction: discord.Interaction,
+        guild_id: int,
+        channel_id: int,
         error: Optional[Exception],
     ) -> None:
         """Handle completion of audio playback."""
         if error:
-            self.logger.error(
-                f"Playback error in guild {interaction.guild.id}: {error}"
-            )
+            self.logger.error(f"Playback error in guild {guild_id}: {error}")
 
-        # Schedule the next track in the event loop
-        asyncio.run_coroutine_threadsafe(self._play_next(interaction), self.bot.loop)
+        asyncio.run_coroutine_threadsafe(
+            self._play_next(guild_id, channel_id), self.bot.loop
+        )
 
     # ========== SKIP ==========
     @app_commands.command(name="skip", description="⏭️ Skip tracks by index or range.")
