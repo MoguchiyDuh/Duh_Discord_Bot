@@ -3,6 +3,6 @@ services:
     build: .
     env_file: .env
     volumes:
-      - ./cookies.txt:/app/cookies.txt:ro
+      - ./cookies.txt:/app/cookies.txt
       - ./bot/logs:/app/bot/logs
     restart: unless-stopped
