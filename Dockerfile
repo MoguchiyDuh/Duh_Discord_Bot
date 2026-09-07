@@ -19,7 +19,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY bot/ ./bot/
 
-RUN useradd --system --no-create-home bot \
+RUN useradd --system --uid 1000 --no-create-home bot \
     && mkdir -p /app/data \
     && chown -R bot:bot /app
 USER bot

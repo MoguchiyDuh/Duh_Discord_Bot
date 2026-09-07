@@ -33,7 +33,7 @@ Optional:
 
 - `GENIUS_API_KEY` ([genius.com/api-clients](https://genius.com/api-clients)) — enables `/music lyrics`.
 - `SYNC_GUILD_ID` — instant guild-scoped command sync for development instead of global sync.
-- Cookies: `touch data/cookies.txt` and paste Netscape-format cookies for age-restricted / members-only videos.
+- Cookies: `mkdir -p data && touch data/cookies.txt` and paste Netscape-format cookies for age-restricted / members-only videos. The container runs as UID 1000 — `chown 1000:1000 data` if it's a bind mount.
 - Logs land in `data/logs/bot.log` (rotating, 3 x 10 MB).
 
 ## Local development (no Docker)
