@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import contextlib
 import io
-import itertools
 import logging
-import random
 import re
-from collections import deque
+import time
 from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.cogs import EMBED_COLOR, BaseCog, channel_allowed
+from bot.music.card import (
+    PlayerCardView,
+    SearchPickerView,
+    render_card,
+    render_tombstone,
+)
 from bot.music.player import LOOP_MODES, GuildPlayer
-from bot.music.views import NowPlayingView, PlaylistSelectionView, TrackSelectionView, parse_selection
+from bot.music.views import PlaylistSelectionView, parse_selection
 from bot.services.lyrics import LyricsError
 from bot.services.youtube import Track, YouTubeError
 
@@ -62,11 +66,66 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     def default_volume(self) -> float:
         return self.bot.settings.default_volume
 
+    async def cog_load(self) -> None:
+        self.card_loop.start()
+
     async def cog_unload(self) -> None:
+        self.card_loop.cancel()
         for guild_id in list(self.players):
             player = self.players.pop(guild_id, None)
             if player:
                 await player.destroy()
+
+    @tasks.loop(seconds=1)
+    async def card_loop(self) -> None:
+        for player in list(self.players.values()):
+            now = time.monotonic()
+            progress_due = (
+                player.page == "now"
+                and player.voice.is_playing()
+                and (now - player.last_card_edit) >= 10
+            )
+            if not (player.card_dirty or progress_due):
+                continue
+            await self._render_card(player)
+            player.card_dirty = False
+            player.last_card_edit = now
+
+    async def _render_card(self, player: GuildPlayer) -> None:
+        embed = render_card(player)
+        try:
+            if player.card_message is None:
+                if player.card_view is None:
+                    player.card_view = PlayerCardView(self, player)
+                player.card_message = await player.text_channel.send(
+                    embed=embed, view=player.card_view, silent=True
+                )
+                player.save_queue()
+            else:
+                player.card_message = await player.card_message.edit(
+                    embed=embed, view=player.card_view
+                )
+        except discord.NotFound:
+            with contextlib.suppress(discord.HTTPException):
+                if player.card_view is None:
+                    player.card_view = PlayerCardView(self, player)
+                player.card_message = await player.text_channel.send(
+                    embed=embed, view=player.card_view, silent=True
+                )
+                player.save_queue()
+        except discord.HTTPException as exc:
+            logger.warning("Card update failed in %s: %s", player.guild.name, exc)
+
+    async def render_tombstone(self, player: GuildPlayer) -> None:
+        message = player.card_message
+        player.card_message = None
+        player.card_view = None
+        if message is None:
+            return
+        embed = render_tombstone(player)
+        with contextlib.suppress(discord.HTTPException):
+            await message.edit(embed=embed, view=None, content=None)
+        player.save_queue()
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
@@ -116,6 +175,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             queue_dir = self.bot.settings.data_dir / "queues"
             player = GuildPlayer(self, interaction.guild, text_channel, voice, queue_dir)
             self.players[guild_id] = player
+            await self._tombstone_stale_card(player)
             logger.info(
                 "Joined voice channel %r in %s", voice_state.channel.name, interaction.guild.name
             )
@@ -123,28 +183,224 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             player.move_to(voice_state.channel)
 
         text_channel = _text_channel(interaction)
-        if text_channel is not None:
+        if text_channel is not None and player.card_message is None:
             player.text_channel = text_channel
         return player
 
-    @staticmethod
-    async def announce_now_playing(player: GuildPlayer) -> None:
-        if player.current is None:
+    async def _tombstone_stale_card(self, player: GuildPlayer) -> None:
+        stale = player.stale_card
+        player.stale_card = None
+        if not stale:
             return
-        if player.now_view:
-            player.now_view.stop()
-        embed = _now_playing_embed(player.current, player.queue, player.loop_mode)
-        view = NowPlayingView(player)
+        channel = self.bot.get_channel(stale["channel"])
+        if not isinstance(channel, discord.abc.Messageable):
+            return
         try:
-            if player.now_message is not None:
-                player.now_message = await player.now_message.edit(embed=embed, view=view)
-            else:
-                player.now_message = await player.text_channel.send(embed=embed, view=view)
+            message = await channel.fetch_message(stale["message"])
         except discord.HTTPException:
-            player.now_message = None
-            player.now_view = None
             return
-        player.now_view = view
+        embed = discord.Embed(
+            title="🏁 Previous session ended (bot restarted)",
+            color=discord.Color.dark_grey(),
+        )
+        with contextlib.suppress(discord.HTTPException):
+            await message.edit(embed=embed, view=None, content=None)
+
+    async def act_enqueue(
+        self,
+        interaction: discord.Interaction | None,
+        player: GuildPlayer,
+        tracks: list[Track],
+        *,
+        front: bool = False,
+        requester: str | None = None,
+        bulk: bool = False,
+    ) -> int:
+        added = await player.enqueue(tracks, front=front, requester=requester)
+        if added == 0:
+            if interaction:
+                await interaction.followup.send(
+                    f"📛 Queue is full! Limit {self.max_queue}.", ephemeral=True
+                )
+            return 0
+
+        restore_note = ""
+        if player.restored:
+            restore_note = f"\n♻️ Restored {player.restored} track(s) from the last session"
+            player.restored = 0
+
+        if requester:
+            if bulk:
+                player.note_event(f"➕ {requester} added {added} tracks")
+            else:
+                player.note_event(f"➕ {requester} added {tracks[0].title[:40]}")
+
+        if interaction:
+            if bulk:
+                skipped = len(tracks) - added
+                message = f"✅ Added {added} track(s) from playlist"
+                if skipped:
+                    message += f" (queue full, {skipped} skipped)"
+                await interaction.followup.send(message + restore_note, ephemeral=True)
+            else:
+                track = tracks[0]
+                position = 1 if front else len(player.queue)
+                label = "Playing next" if front else "Added to queue"
+                if not player.is_active and player.current is None:
+                    label = "Starting"
+                await interaction.followup.send(
+                    f"➕ {label} (#{position}): **{track.title}**{restore_note}",
+                    ephemeral=True,
+                )
+        return added
+
+    async def act_add(
+        self,
+        interaction: discord.Interaction,
+        player: GuildPlayer,
+        query: str,
+        *,
+        front: bool = False,
+    ) -> None:
+        if len(player.queue) >= self.max_queue:
+            await interaction.followup.send(
+                f"📛 Queue is full! Limit {self.max_queue}.", ephemeral=True
+            )
+            return
+        requester = interaction.user.display_name
+        try:
+            if query.startswith(("http://", "https://")):
+                if "list=" in query:
+                    tracks = await self.bot.youtube.playlist(query)
+                    if not tracks:
+                        await interaction.followup.send(
+                            "ℹ️ Playlist is empty or unavailable.", ephemeral=True
+                        )
+                        return
+                    view = PlaylistSelectionView(
+                        len(tracks), interaction.user.id, timeout=self.search_timeout
+                    )
+                    view.message = await interaction.followup.send(
+                        embed=_playlist_embed(tracks), view=view, ephemeral=True
+                    )
+                    await view.wait()
+                    selection = view.selection
+                    if not selection or selection == "cancel":
+                        return
+                    if selection == "all":
+                        indices = set(range(1, len(tracks) + 1))
+                    else:
+                        indices = parse_selection(selection, len(tracks))
+                        if not indices:
+                            await interaction.followup.send(
+                                "❌ Invalid selection format.", ephemeral=True
+                            )
+                            return
+                    selected = [tracks[i - 1] for i in sorted(indices)]
+                    if front:
+                        selected.reverse()
+                    await self.act_enqueue(
+                        interaction, player, selected, front=front, requester=requester, bulk=True
+                    )
+                else:
+                    track = await self.bot.youtube.track(query)
+                    await self.act_enqueue(
+                        interaction, player, [track], front=front, requester=requester
+                    )
+            else:
+                results = await self.bot.youtube.search(query)
+                if not results:
+                    await interaction.followup.send(
+                        "🔍 No results found for your query.", ephemeral=True
+                    )
+                    return
+                picker = SearchPickerView(
+                    self, player, results, requester, timeout=self.search_timeout
+                )
+                await interaction.followup.send(
+                    embed=_picker_embed(results, query), view=picker, ephemeral=True
+                )
+                picker.message = await interaction.original_response()
+                await picker.wait()
+        except YouTubeError as exc:
+            logger.warning("Add failed for %r: %s", query, exc)
+            await interaction.followup.send("❌ Could not fetch that track.", ephemeral=True)
+        except Exception:
+            logger.exception("Error adding track %r", query)
+            await interaction.followup.send(
+                "❌ An error occurred while processing your request.", ephemeral=True
+            )
+
+    async def act_play_pause(self, player: GuildPlayer, name: str) -> str | None:
+        if player.voice.is_playing():
+            player.voice.pause()
+            player._pause_clock()
+            player.note_event(f"⏸️ Paused ({name})")
+            return None
+        if player.voice.is_paused():
+            player.voice.resume()
+            player._resume_clock()
+            player.note_event(f"▶️ Resumed ({name})")
+            return None
+        return "Nothing is playing."
+
+    async def act_skip(self, player: GuildPlayer, name: str) -> str | None:
+        if player.current is None:
+            return "Nothing is playing."
+        track = player.stop_current()
+        if track is not None:
+            player.history.append(track)
+        player.skips[name] += 1
+        player.note_event(f"⏭️ {name} skipped {track.title[:40]}")
+        player.kick()
+        return None
+
+    async def act_prev(self, player: GuildPlayer, name: str) -> str | None:
+        track = player.prev()
+        if track is None:
+            return "No history yet."
+        player.stop_current(record=False)
+        player.note_event(f"⏮️ {name} went back to {track.title[:40]}")
+        player.kick()
+        return None
+
+    async def act_shuffle(self, player: GuildPlayer, name: str) -> str | None:
+        if not player.queue:
+            return "The queue is empty, nothing to shuffle."
+        count = player.shuffle()
+        player.note_event(f"🔀 {name} shuffled {count} tracks")
+        return None
+
+    async def act_stop(self, player: GuildPlayer, name: str) -> None:
+        player.note_event(f"⏹️ {name} stopped the session")
+        await self.destroy_player(player.guild)
+
+    async def act_volume(self, player: GuildPlayer, name: str, percent: int) -> int:
+        applied = player.set_volume(percent / 100)
+        player.note_event(f"🔊 {name} set volume to {round(applied * 100)}%")
+        return round(applied * 100)
+
+    async def act_lyrics(self, interaction: discord.Interaction) -> None:
+        player = self.players.get(interaction.guild_id)
+        query = player.current.title if player and player.current else None
+        if not query:
+            await interaction.followup.send(
+                "🔇 No track is playing and no query provided.", ephemeral=True
+            )
+            return
+        if not self.bot.lyrics.enabled:
+            await interaction.followup.send(
+                "❌ Lyrics are not configured (missing GENIUS_API_KEY).", ephemeral=True
+            )
+            return
+        try:
+            fetched = await self.bot.lyrics.fetch(query)
+        except LyricsError as exc:
+            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+        safe_name = re.sub(r"[^\w\-. ]", "", fetched.title).strip()[:64] or "lyrics"
+        data = io.BytesIO(fetched.text.encode("utf-8"))
+        await interaction.followup.send(file=discord.File(data, filename=f"{safe_name}.txt"))
 
     @app_commands.command(name="join", description="➕ Joins your voice channel.")
     @channel_allowed(__file__)
@@ -152,7 +408,9 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     async def join(self, interaction: discord.Interaction) -> None:
         player = await self._get_player(interaction)
         if player and player.voice.channel:
-            await interaction.response.send_message(f"✅ Joined {player.voice.channel.name}")
+            await interaction.response.send_message(
+                f"✅ Joined {player.voice.channel.name}", ephemeral=True
+            )
 
     @app_commands.command(
         name="leave", description="🚪 Leaves the voice channel and clears the queue."
@@ -164,8 +422,10 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if not player:
             await interaction.response.send_message("📴 I'm not in a voice channel.", ephemeral=True)
             return
+        if player.card_message:
+            player.note_event(f"🚪 {interaction.user.display_name} left the session")
         await self.destroy_player(interaction.guild)
-        await interaction.response.send_message("✅ Left the voice channel.")
+        await interaction.response.send_message("✅ Left the voice channel.", ephemeral=True)
 
     @app_commands.command(
         name="play",
@@ -193,155 +453,8 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         player = await self._get_player(interaction)
         if player is None:
             return
-        await interaction.response.defer()
-
-        if len(player.queue) >= self.max_queue:
-            await interaction.followup.send(
-                f"📛 Queue is full! Limit {self.max_queue}.", ephemeral=True
-            )
-            return
-
-        try:
-            if query.startswith(("http://", "https://")):
-                if "list=" in query:
-                    await self._play_playlist(interaction, player, query, front=front)
-                else:
-                    track = await self.bot.youtube.track(query)
-                    await self._enqueue(interaction, player, [track], front=front)
-            else:
-                await self._play_search(interaction, player, query, front=front)
-        except YouTubeError as exc:
-            logger.warning("Play failed for %r: %s", query, exc)
-            await interaction.followup.send("❌ Could not fetch that track.", ephemeral=True)
-        except Exception:
-            logger.exception("Error in play command")
-            await interaction.followup.send(
-                "❌ An error occurred while processing your request.", ephemeral=True
-            )
-
-    async def _play_search(
-        self,
-        interaction: discord.Interaction,
-        player: GuildPlayer,
-        query: str,
-        *,
-        front: bool = False,
-    ) -> None:
-        results = await self.bot.youtube.search(query)
-        if not results:
-            await interaction.followup.send("🔍 No results found for your query.", ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title="🔍 Search Results",
-            description="Select a track to play:",
-            color=EMBED_COLOR,
-        )
-        for index, track in enumerate(results, start=1):
-            duration = f" (`{track.formatted_duration}`)" if track.formatted_duration else ""
-            embed.add_field(name=f"{index}. {track.title[:80]}{duration}", value="\u200b", inline=False)
-        embed.set_footer(text="Selection will timeout in 60 seconds")
-
-        view = TrackSelectionView(
-            results, interaction.user.id, timeout=self.search_timeout
-        )
-        view.message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        await view.wait()
-
-        if view.selected is None:
-            return
-        await self._enqueue(interaction, player, [view.selected], front=front)
-
-    async def _play_playlist(
-        self,
-        interaction: discord.Interaction,
-        player: GuildPlayer,
-        playlist_url: str,
-        *,
-        front: bool = False,
-    ) -> None:
-        tracks = await self.bot.youtube.playlist(playlist_url)
-        if not tracks:
-            await interaction.followup.send(
-                "ℹ️ Playlist is empty or unavailable.", ephemeral=True
-            )
-            return
-
-        embed = discord.Embed(
-            title="📜 Playlist Selection",
-            description=f"Found {len(tracks)} tracks in playlist.\n\nSelect which tracks to add:",
-            color=EMBED_COLOR,
-        )
-        embed.add_field(
-            name="Options",
-            value="• **Add All** - Add all tracks\n• **Custom Selection** - Choose specific tracks or ranges",
-            inline=False,
-        )
-        embed.set_footer(text="Selection will timeout in 60 seconds")
-
-        view = PlaylistSelectionView(
-            len(tracks), interaction.user.id, timeout=self.search_timeout
-        )
-        view.message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        await view.wait()
-
-        selection = view.selection
-        if not selection or selection == "cancel":
-            return
-
-        if selection == "all":
-            indices = set(range(1, len(tracks) + 1))
-        else:
-            indices = parse_selection(selection, len(tracks))
-            if not indices:
-                await interaction.followup.send("❌ Invalid selection format.", ephemeral=True)
-                return
-
-        selected = [tracks[index - 1] for index in sorted(indices)]
-        if front:
-            selected.reverse()
-        await self._enqueue(interaction, player, selected, front=front, bulk=True)
-
-    async def _enqueue(
-        self,
-        interaction: discord.Interaction,
-        player: GuildPlayer,
-        tracks: list[Track],
-        *,
-        front: bool = False,
-        bulk: bool = False,
-    ) -> None:
-        added = await player.enqueue(tracks, front=front)
-        if added == 0:
-            await interaction.followup.send(
-                f"📛 Queue is full! Limit {self.max_queue}.", ephemeral=True
-            )
-            return
-
-        restore_note = ""
-        if player.restored:
-            restore_note = f"\n♻️ Restored {player.restored} track(s) from the last session"
-            player.restored = 0
-
-        if bulk:
-            skipped = len(tracks) - added
-            message = f"✅ Added {added} track(s) from playlist"
-            if skipped:
-                message += f" (queue full, {skipped} skipped)"
-            await interaction.followup.send(message + restore_note, ephemeral=True)
-        else:
-            track = tracks[0]
-            if player.is_active:
-                position = 1 if front else len(player.queue)
-                label = "Playing next" if front else "Added to queue"
-                await interaction.followup.send(
-                    f"➕ {label} (#{position}): **{track.title}**{restore_note}",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    f"▶️ Starting: **{track.title}**{restore_note}", ephemeral=True
-                )
+        await interaction.response.defer(ephemeral=True)
+        await self.act_add(interaction, player, query, front=front)
 
     @app_commands.command(name="skip", description="⏭️ Skip tracks by index or range.")
     @app_commands.describe(query="Index or range to skip (e.g. '1', '0' current track, '1-3')")
@@ -382,6 +495,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if 0 in indices and player.current is not None:
             track = player.stop_current()
             if track:
+                player.history.append(track)
                 skipped.append(track)
 
         queued = list(player.queue)
@@ -400,54 +514,43 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             return
 
         if 0 in indices:
-            if player.now_message:
-                with contextlib.suppress(discord.HTTPException):
-                    await player.now_message.edit(
-                        content="⏭️ Skipped.", embed=None, view=None
-                    )
-                player.now_message = None
+            player.note_event(
+                f"⏭️ {interaction.user.display_name} skipped {skipped[0].title[:40]}"
+            )
             player.kick()
+        else:
+            player.touch_card()
         logger.info("Skipped: %s", ", ".join(t.title for t in skipped))
-        await interaction.response.send_message(f"⏭ Skipped {len(skipped)} track(s)")
+        await interaction.response.send_message(
+            f"⏭ Skipped {len(skipped)} track(s)", ephemeral=True
+        )
 
-    @app_commands.command(name="queue", description="📜 Show the current queue.")
+    @app_commands.command(name="queue", description="📜 Show the queue on the card.")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def queue(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.queue:
-            await interaction.response.send_message("ℹ️ The queue is empty.")
+        if not player:
+            await interaction.response.send_message("📴 I'm not in a voice channel.", ephemeral=True)
             return
-
-        queue_list = "\n".join(
-            f"**{index}.** [{track.title[:50]}]({track.page_url})"
-            for index, track in enumerate(itertools.islice(player.queue, 10), start=1)
+        player.page = "queue"
+        player.touch_card()
+        await interaction.response.send_message(
+            "📜 Queue shown on the card.", ephemeral=True
         )
-        embed = discord.Embed(
-            title=f"📜 Queue ({len(player.queue)} tracks) • Loop: {player.loop_mode}",
-            description=queue_list,
-            color=EMBED_COLOR,
-        )
-        if player.current:
-            embed.add_field(
-                name="Now Playing",
-                value=f"[{player.current.title}]({player.current.page_url})",
-                inline=False,
-            )
-        if len(player.queue) > 10:
-            embed.set_footer(text=f"... and {len(player.queue) - 10} more tracks")
-        await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="current", description="🎵 Show the currently playing track.")
+    @app_commands.command(name="current", description="🎵 Show the now-playing card.")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def current(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.current:
-            await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
+        if not player:
+            await interaction.response.send_message("📴 I'm not in a voice channel.", ephemeral=True)
             return
+        player.page = "now"
+        player.touch_card()
         await interaction.response.send_message(
-            embed=_now_playing_embed(player.current, player.queue)
+            "🎵 Now playing shown on the card.", ephemeral=True
         )
 
     @app_commands.command(name="pause", description="⏸️ Pause the current track.")
@@ -455,29 +558,33 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     @app_commands.guild_only()
     async def pause(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.voice.is_playing():
-            await interaction.response.send_message("🔇 Nothing is playing.", ephemeral=True)
+        if not player:
+            await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
             return
-        player.voice.pause()
-        await interaction.response.send_message("⏸️ Playback paused.")
+        error = await self.act_play_pause(player, interaction.user.display_name)
+        if error:
+            await interaction.response.send_message(f"ℹ️ {error}", ephemeral=True)
+        else:
+            await interaction.response.send_message("⏸️ Paused.", ephemeral=True)
 
     @app_commands.command(name="resume", description="▶️ Resume playback.")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def resume(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.voice.is_paused():
-            await interaction.response.send_message(
-                "ℹ️ Playback is not paused.", ephemeral=True
-            )
+        if not player:
+            await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
             return
-        player.voice.resume()
-        await interaction.response.send_message("▶️ Playback resumed.")
+        error = await self.act_play_pause(player, interaction.user.display_name)
+        if error:
+            await interaction.response.send_message(f"ℹ️ {error}", ephemeral=True)
+        else:
+            await interaction.response.send_message("▶️ Resumed.", ephemeral=True)
 
     @app_commands.command(
         name="volume", description="🔊 Set playback volume percent (0-150)."
     )
-    @app_commands.describe(percent="Volume percent, 100 is normal loudness (default 75)")
+    @app_commands.describe(percent="Volume percent, 100 is normal loudness")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def volume(
@@ -487,14 +594,8 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if not player:
             await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
             return
-        applied = player.set_volume(percent / 100)
-        if player.now_view:
-            player.now_view._sync_buttons()
-            with contextlib.suppress(discord.HTTPException):
-                await player.now_message.edit(view=player.now_view)
-        await interaction.response.send_message(
-            f"🔊 Volume set to {round(applied * 100)}%", ephemeral=True
-        )
+        applied = await self.act_volume(player, interaction.user.display_name, percent)
+        await interaction.response.send_message(f"🔊 Volume set to {applied}%", ephemeral=True)
 
     @app_commands.command(
         name="loop",
@@ -523,21 +624,24 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             return
         player.loop_mode = new_mode
         player.save_queue()
-        emoji = {"off": "▶️", "track": "🔁", "queue": "🔄"}[new_mode]
-        await interaction.response.send_message(f"{emoji} Loop mode: **{new_mode}**")
+        player.note_event(
+            f"🔁 {interaction.user.display_name} set loop to {new_mode}"
+        )
+        await interaction.response.send_message(f"🔁 Loop mode: **{new_mode}**", ephemeral=True)
 
     @app_commands.command(name="shuffle", description="🔀 Shuffle the current queue.")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def shuffle(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.queue:
-            await interaction.response.send_message(
-                "ℹ️ The queue is empty, nothing to shuffle.", ephemeral=True
-            )
+        if not player:
+            await interaction.response.send_message("📴 I'm not in a voice channel.", ephemeral=True)
             return
-        random.shuffle(player.queue)
-        await interaction.response.send_message("🔀 Queue is shuffled.")
+        error = await self.act_shuffle(player, interaction.user.display_name)
+        if error:
+            await interaction.response.send_message(f"ℹ️ {error}", ephemeral=True)
+        else:
+            await interaction.response.send_message("🔀 Queue is shuffled.", ephemeral=True)
 
     @app_commands.command(name="clear", description="🧹 Clear the queue.")
     @channel_allowed(__file__)
@@ -550,19 +654,14 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
             return
         player.clear_queue()
-        await interaction.response.send_message("🗑️ Queue cleared.")
+        player.note_event(f"🧹 {interaction.user.display_name} cleared the queue")
+        await interaction.response.send_message("🗑️ Queue cleared.", ephemeral=True)
 
     @app_commands.command(name="lyrics", description="📝 Get lyrics for a song.")
     @app_commands.describe(query="Song name to search lyrics for (default: current track)")
     @channel_allowed(__file__)
     @app_commands.guild_only()
     async def lyrics(self, interaction: discord.Interaction, query: str | None = None) -> None:
-        if not self.bot.lyrics.enabled:
-            await interaction.response.send_message(
-                "❌ Lyrics are not configured (missing GENIUS_API_KEY).", ephemeral=True
-            )
-            return
-
         if not query:
             player = self.players.get(interaction.guild_id)
             if player and player.current:
@@ -572,6 +671,11 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     "🔇 No track is playing and no query provided.", ephemeral=True
                 )
                 return
+        if not self.bot.lyrics.enabled:
+            await interaction.response.send_message(
+                "❌ Lyrics are not configured (missing GENIUS_API_KEY).", ephemeral=True
+            )
+            return
 
         await interaction.response.defer()
         try:
@@ -582,34 +686,31 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
 
         safe_name = re.sub(r"[^\w\-. ]", "", fetched.title).strip()[:64] or "lyrics"
         data = io.BytesIO(fetched.text.encode("utf-8"))
-        file = discord.File(data, filename=f"{safe_name}.txt")
-        embed = discord.Embed(
-            title=f"🎵 {fetched.title}",
-            description=f"[Lyrics page]({fetched.url})",
-            color=EMBED_COLOR,
-        )
-        await interaction.followup.send(embed=embed, file=file)
+        await interaction.followup.send(file=discord.File(data, filename=f"{safe_name}.txt"))
 
 
-def _now_playing_embed(track: Track, queue: deque[Track], loop_mode: str = "off") -> discord.Embed:
-    loop_badge = {"track": "🔁", "queue": "🔄"}.get(loop_mode)
-    title = "🎶 Now Playing" + (f" {loop_badge}" if loop_badge else "")
+def _picker_embed(results: list[Track], query: str) -> discord.Embed:
     embed = discord.Embed(
-        title=title,
-        description=f"[{track.title}]({track.page_url})",
+        title=f"🔍 Results for “{query[:60]}”",
+        description="Pick a track from the menu below.",
         color=EMBED_COLOR,
     )
-    if track.thumbnail:
-        embed.set_thumbnail(url=track.thumbnail)
-    if track.author:
-        author_value = (
-            f"[{track.author}]({track.author_url})" if track.author_url else track.author
-        )
-        embed.add_field(name="Author", value=author_value, inline=True)
-    if track.formatted_duration:
-        embed.add_field(name="Duration", value=track.formatted_duration, inline=True)
-    if queue:
-        embed.add_field(name="Next Up", value=f"[{queue[0].title}]({queue[0].page_url})", inline=True)
+    embed.set_footer(text="Selection will timeout in 60 seconds")
+    return embed
+
+
+def _playlist_embed(tracks: list[Track]) -> discord.Embed:
+    embed = discord.Embed(
+        title="📜 Playlist Selection",
+        description=f"Found {len(tracks)} tracks in playlist.\n\nSelect which tracks to add:",
+        color=EMBED_COLOR,
+    )
+    embed.add_field(
+        name="Options",
+        value="• **Add All** - Add all tracks\n• **Custom Selection** - Choose specific tracks or ranges",
+        inline=False,
+    )
+    embed.set_footer(text="Selection will timeout in 60 seconds")
     return embed
 
 

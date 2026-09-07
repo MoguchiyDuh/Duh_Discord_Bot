@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
 
 import discord
-
-from bot.services.youtube import Track
-
-if TYPE_CHECKING:
-    from bot.music.player import GuildPlayer
 
 
 def parse_selection(selection: str, max_count: int) -> set[int]:
@@ -54,40 +48,6 @@ class _SelectionView(discord.ui.View):
         await self.dispose("⏱️ Timed out.")
 
 
-class TrackSelectionView(_SelectionView):
-    def __init__(
-        self, tracks: list[Track], user_id: int, timeout: float = 60.0
-    ) -> None:
-        super().__init__(user_id, timeout)
-        self.tracks = tracks
-        self.selected: Track | None = None
-        for index in range(len(tracks)):
-            self.add_item(_TrackButton(index))
-        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.danger)
-        cancel.callback = self._cancel
-        self.add_item(cancel)
-
-    async def _cancel(self, interaction: discord.Interaction) -> None:
-        await self.dispose("Cancelled.")
-
-
-class _TrackButton(discord.ui.Button[TrackSelectionView]):
-    def __init__(self, index: int) -> None:
-        super().__init__(
-            label=str(index + 1),
-            style=discord.ButtonStyle.primary,
-            row=index // 3,
-        )
-        self.index = index
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        view = self.view
-        if view is None:
-            return
-        view.selected = view.tracks[self.index]
-        await view.dispose(f"➕ **{view.selected.title}**")
-
-
 class PlaylistSelectionView(_SelectionView):
     def __init__(self, track_count: int, user_id: int, timeout: float = 60.0) -> None:
         super().__init__(user_id, timeout)
@@ -130,89 +90,3 @@ class PlaylistRangeModal(discord.ui.Modal, title="Select Playlist Range"):
         self.parent.selection = self.selection_input.value
         await interaction.response.defer()
         await self.parent.dispose("📜 Adding selected tracks…")
-
-
-class NowPlayingView(discord.ui.View):
-    def __init__(self, player: GuildPlayer) -> None:
-        super().__init__(timeout=None)
-        self.player = player
-        self._sync_buttons()
-
-    def _sync_buttons(self) -> None:
-        playing = self.player.voice.is_playing() if self.player.voice else False
-        self.pause_resume.label = "Pause" if playing else "Resume"
-        self.pause_resume.emoji = "⏸️" if playing else "▶️"
-        mode = self.player.loop_mode
-        self.loop_cycle.label = f"Loop: {mode}"
-        self.volume_button.label = f"Volume {round(self.player.volume * 100)}%"
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        player = self.player
-        if interaction.guild_id != player.guild.id:
-            return False
-        if not player.voice or not player.voice.is_connected():
-            await interaction.response.edit_message(view=None)
-            self.stop()
-            return False
-        return True
-
-    @discord.ui.button(label="Pause", emoji="⏸️", style=discord.ButtonStyle.primary)
-    async def pause_resume(
-        self, interaction: discord.Interaction, _: discord.ui.Button
-    ) -> None:
-        if self.player.voice.is_playing():
-            self.player.voice.pause()
-        elif self.player.voice.is_paused():
-            self.player.voice.resume()
-        self._sync_buttons()
-        await interaction.response.edit_message(view=self)
-
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary)
-    async def skip(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        self.stop()
-        self.player.stop_current()
-        self.player.kick()
-        await interaction.response.edit_message(
-            content="⏭️ Skipped.", embed=None, view=None
-        )
-
-    @discord.ui.button(label="Loop: off", emoji="🔁", style=discord.ButtonStyle.secondary)
-    async def loop_cycle(
-        self, interaction: discord.Interaction, _: discord.ui.Button
-    ) -> None:
-        self.player.cycle_loop()
-        self._sync_buttons()
-        await interaction.response.edit_message(view=self)
-
-    @discord.ui.button(label="Volume 75%", emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
-    async def volume_button(
-        self, interaction: discord.Interaction, _: discord.ui.Button
-    ) -> None:
-        await interaction.response.send_modal(VolumeModal(self))
-
-
-class VolumeModal(discord.ui.Modal, title="Set Volume"):
-    volume_input = discord.ui.TextInput(
-        label="Volume percent (0-150)",
-        placeholder="e.g. 75",
-        max_length=3,
-        default="75",
-    )
-
-    def __init__(self, parent: NowPlayingView) -> None:
-        super().__init__()
-        self.parent = parent
-        self.volume_input.default = str(round(parent.player.volume * 100))
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        try:
-            percent = int(self.volume_input.value.strip().rstrip("%"))
-        except ValueError:
-            await interaction.response.send_message(
-                "❌ Enter a number between 0 and 150.", ephemeral=True
-            )
-            return
-        percent = max(0, min(percent, 150))
-        self.parent.player.set_volume(percent / 100)
-        self.parent._sync_buttons()
-        await interaction.response.edit_message(view=self.parent)

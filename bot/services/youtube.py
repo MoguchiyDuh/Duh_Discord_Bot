@@ -29,6 +29,7 @@ class Track:
     thumbnail: str | None = None
     author: str | None = None
     author_url: str | None = None
+    requester: str | None = None
 
     @property
     def formatted_duration(self) -> str | None:
@@ -48,6 +49,7 @@ class Track:
             "thumbnail": self.thumbnail,
             "author": self.author,
             "author_url": self.author_url,
+            "requester": self.requester,
         }
 
     @classmethod
@@ -59,6 +61,7 @@ class Track:
             thumbnail=data.get("thumbnail"),
             author=data.get("author"),
             author_url=data.get("author_url"),
+            requester=data.get("requester"),
         )
 
 
