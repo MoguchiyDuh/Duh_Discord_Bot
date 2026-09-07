@@ -340,7 +340,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 )
             else:
                 await interaction.followup.send(
-                    f"▶️ Playing: **{track.title}**{restore_note}", ephemeral=True
+                    f"▶️ Starting: **{track.title}**{restore_note}", ephemeral=True
                 )
 
     @app_commands.command(name="skip", description="⏭️ Skip tracks by index or range.")

@@ -134,7 +134,7 @@ class GuildPlayer:
                 self.current = track
                 try:
                     async with asyncio.timeout(self.cog.resolve_timeout):
-                        stream_url = await self.cog.youtube.stream_url(track.page_url)
+                        stream_url = await self.cog.bot.youtube.stream_url(track.page_url)
                         pcm = discord.FFmpegPCMAudio(
                             stream_url,
                             before_options=FFMPEG_OPTIONS["before_options"],
