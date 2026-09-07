@@ -48,6 +48,7 @@ class GuildPlayer:
         self.queue: deque[Track] = deque()
         self.current: Track | None = None
         self.loop_mode: str = "off"
+        self.volume: float = cog.default_volume
         self.now_message: discord.Message | None = None
         self.now_view: discord.ui.View | None = None
         self.restored = 0
@@ -86,6 +87,13 @@ class GuildPlayer:
         self.queue.clear()
         with contextlib.suppress(OSError):
             self._queue_file.unlink(missing_ok=True)
+
+    def set_volume(self, value: float) -> float:
+        self.volume = max(0.0, min(value, 2.0))
+        if self.is_active and isinstance(self.voice.source, discord.PCMVolumeTransformer):
+            self.voice.source.volume = self.volume
+        self.save_queue()
+        return self.volume
 
     def cycle_loop(self) -> str:
         index = LOOP_MODES.index(self.loop_mode)
@@ -127,9 +135,12 @@ class GuildPlayer:
                 try:
                     async with asyncio.timeout(self.cog.resolve_timeout):
                         stream_url = await self.cog.youtube.stream_url(track.page_url)
-                        source = await discord.FFmpegOpusAudio.from_probe(
-                            stream_url, **FFMPEG_OPTIONS
+                        pcm = discord.FFmpegPCMAudio(
+                            stream_url,
+                            before_options=FFMPEG_OPTIONS["before_options"],
+                            options=FFMPEG_OPTIONS["options"],
                         )
+                        source = discord.PCMVolumeTransformer(pcm, volume=self.volume)
                 except Exception as exc:
                     failures += 1
                     logger.warning("Failed to start %r: %s", track.title, exc)
@@ -205,12 +216,19 @@ class GuildPlayer:
         self.queue.extend(tracks[: self.cog.max_queue])
         if data.get("loop") in LOOP_MODES:
             self.loop_mode = data["loop"]
+        volume = data.get("volume")
+        if isinstance(volume, (int, float)) and 0.0 <= volume <= 2.0:
+            self.volume = float(volume)
         self.restored = len(self.queue)
         if self.restored:
             logger.info("Restored %d queued track(s) for %s", self.restored, self.guild.name)
 
     def save_queue(self) -> None:
-        payload = {"loop": self.loop_mode, "queue": [t.to_dict() for t in self.queue]}
+        payload = {
+            "loop": self.loop_mode,
+            "volume": self.volume,
+            "queue": [t.to_dict() for t in self.queue],
+        }
         try:
             self._queue_file.parent.mkdir(parents=True, exist_ok=True)
             self._queue_file.write_text(

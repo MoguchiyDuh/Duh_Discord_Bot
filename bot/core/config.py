@@ -36,6 +36,7 @@ class Settings:
     idle_timeout: float = 300.0
     search_timeout: float = 60.0
     resolve_timeout: float = 30.0
+    default_volume: float = 0.75
 
     @property
     def cookies_path(self) -> Path:
@@ -49,6 +50,11 @@ class Settings:
     def load() -> Settings:
         data_dir = Path(os.environ.get("DATA_DIR", "data")).resolve()
         sync_guild = _optional("SYNC_GUILD_ID")
+        raw_volume = os.environ.get("DEFAULT_VOLUME", "")
+        try:
+            default_volume = float(raw_volume) if raw_volume else 0.75
+        except ValueError:
+            default_volume = 0.75
         return Settings(
             discord_token=_require("DISCORD_TOKEN"),
             genius_api_key=_optional("GENIUS_API_KEY"),
@@ -56,4 +62,5 @@ class Settings:
             data_dir=data_dir,
             sync_guild_id=int(sync_guild) if sync_guild else None,
             pot_provider_url=_optional("POT_PROVIDER_URL"),
+            default_volume=max(0.0, min(default_volume, 2.0)),
         )

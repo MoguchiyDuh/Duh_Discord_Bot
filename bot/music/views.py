@@ -144,6 +144,7 @@ class NowPlayingView(discord.ui.View):
         self.pause_resume.emoji = "⏸️" if playing else "▶️"
         mode = self.player.loop_mode
         self.loop_cycle.label = f"Loop: {mode}"
+        self.volume_button.label = f"Volume {round(self.player.volume * 100)}%"
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         player = self.player
@@ -182,3 +183,36 @@ class NowPlayingView(discord.ui.View):
         self.player.cycle_loop()
         self._sync_buttons()
         await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Volume 75%", emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
+    async def volume_button(
+        self, interaction: discord.Interaction, _: discord.ui.Button
+    ) -> None:
+        await interaction.response.send_modal(VolumeModal(self))
+
+
+class VolumeModal(discord.ui.Modal, title="Set Volume"):
+    volume_input = discord.ui.TextInput(
+        label="Volume percent (0-150)",
+        placeholder="e.g. 75",
+        max_length=3,
+        default="75",
+    )
+
+    def __init__(self, parent: NowPlayingView) -> None:
+        super().__init__()
+        self.parent = parent
+        self.volume_input.default = str(round(parent.player.volume * 100))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            percent = int(self.volume_input.value.strip().rstrip("%"))
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Enter a number between 0 and 150.", ephemeral=True
+            )
+            return
+        percent = max(0, min(percent, 150))
+        self.parent.player.set_volume(percent / 100)
+        self.parent._sync_buttons()
+        await interaction.response.edit_message(view=self.parent)

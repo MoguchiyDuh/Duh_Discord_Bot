@@ -58,6 +58,10 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     def search_timeout(self) -> float:
         return self.bot.settings.search_timeout
 
+    @property
+    def default_volume(self) -> float:
+        return self.bot.settings.default_volume
+
     async def cog_unload(self) -> None:
         for guild_id in list(self.players):
             player = self.players.pop(guild_id, None)
@@ -469,6 +473,28 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             return
         player.voice.resume()
         await interaction.response.send_message("▶️ Playback resumed.")
+
+    @app_commands.command(
+        name="volume", description="🔊 Set playback volume percent (0-150)."
+    )
+    @app_commands.describe(percent="Volume percent, 100 is normal loudness (default 75)")
+    @channel_allowed(__file__)
+    @app_commands.guild_only()
+    async def volume(
+        self, interaction: discord.Interaction, percent: app_commands.Range[int, 0, 150]
+    ) -> None:
+        player = self.players.get(interaction.guild_id)
+        if not player:
+            await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
+            return
+        applied = player.set_volume(percent / 100)
+        if player.now_view:
+            player.now_view._sync_buttons()
+            with contextlib.suppress(discord.HTTPException):
+                await player.now_message.edit(view=player.now_view)
+        await interaction.response.send_message(
+            f"🔊 Volume set to {round(applied * 100)}%", ephemeral=True
+        )
 
     @app_commands.command(
         name="loop",
