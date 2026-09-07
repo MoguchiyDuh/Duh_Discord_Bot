@@ -59,7 +59,6 @@ class LyricsService:
         else:
             self._client = lyricsgenius.Genius(
                 settings.genius_api_key,
-                verbose=False,
                 remove_section_headers=False,
                 skip_non_songs=True,
                 timeout=15,
