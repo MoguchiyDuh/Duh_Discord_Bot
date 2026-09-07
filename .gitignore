@@ -7,3 +7,5 @@ data/
 .vscode
 .idea
 compose.override.yml
+channels.json
+queues/
