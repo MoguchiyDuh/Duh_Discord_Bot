@@ -8,11 +8,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY bot/ ./bot/
 
-CMD ["uv", "run", "python", "-m", "bot"]
+RUN useradd --system --no-create-home bot \
+    && mkdir -p /app/data \
+    && chown -R bot:bot /app
+USER bot
+
+ENV PATH="/app/.venv/bin:$PATH"
+CMD ["python", "-m", "bot"]

@@ -1,12 +1,9 @@
-tests
 .venv
 .env
-.pytest_cache
+__pycache__/
+*.pyc
+data/
 *.log
-bot/logs/
-__pycache__
-pytest.ini
 .vscode
-cookies.txt
-.pids
+.idea
 compose.override.yml

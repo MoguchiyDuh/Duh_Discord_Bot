@@ -1,8 +1,17 @@
 services:
   bot:
     build: .
-    env_file: .env
-    volumes:
-      - ./cookies.txt:/app/cookies.txt
-      - ./bot/logs:/app/bot/logs
     restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+      POT_PROVIDER_URL: http://bgutil-provider:4416
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - bgutil-provider
+
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: unless-stopped
+    init: true

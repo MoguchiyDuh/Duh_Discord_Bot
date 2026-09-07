@@ -1,53 +1,52 @@
 # Duh Discord Bot
 
-A multipurpose Discord bot with music, minigames, temporary voice channels, and weather features.
+Multipurpose Discord bot: YouTube music with queue management, minigames (Chess, Tic-Tac-Toe, Connect Four), auto-managed temporary voice channels, weather, and random utilities.
+
+Slash commands only.
 
 ## Features
 
-- **Music**: Play YouTube music with queue management, playlists, lyrics
-- **Minigames**: Chess, Tic-Tac-Toe, Connect Four with interactive UI
-- **Temporary Channels**: Auto-created voice channels with owner controls
-- **Weather**: Current conditions using Open-Meteo API (no key required)
-- **Utilities**: Server stats, ping, message clearing
+- **Music**: YouTube playback with queue, playlists, search, lyrics, loop/shuffle. Stream URLs are resolved at play time, so long queues never expire.
+- **PO Token provider**: ships with a `bgutil-ytdlp-pot-provider` sidecar so YouTube extraction keeps working from VPS IPs.
+- **Minigames**: Chess, Tic-Tac-Toe, Connect Four in private threads.
+- **Temporary channels**: "Join to Create" voice hub with owner controls (lock, limit, rename, kick, mute).
+- **Weather**: current conditions via Open-Meteo (no API key).
+- **Utilities**: dice, coinflip, password generator, colors, lorem ipsum, server stats.
 
-## Quick Start
+## Quick start
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/MoguchiyDuh/Duh_Discord_Bot.git
-   cd Duh_Discord_Bot
-   ```
+```bash
+git clone https://github.com/MoguchiyDuh/Duh_Discord_Bot.git
+cd Duh_Discord_Bot
+cp .env.example .env
+```
 
-2. **Configure environment**
-  create
-   ```.env
-   DISCORD_TOKEN=<token>
-   GENIUS_API_KEY=<api key>
-   ```
+Fill in `DISCORD_TOKEN` in `.env`, then:
 
-4. **Run the bot**
-   - **Windows**: Double-click `start.bat`
-   - **Linux/macOS**: `./start.sh`
+```bash
+docker compose up -d --build
+```
 
-## Required Tokens
+The bot creates a `Commands` category with its command channels (`🛠️┃bot-commands`, `🎮┃minigames`, `🎤┃media-hub`) and a `Temporary Channels` category with the `Join to Create` voice hub on join. Slash commands only work in those channels.
 
-- **Discord Bot Token**: Get from [Discord Developer Portal](https://discord.com/developers/applications)
-- **Genius API Key**: Get from [Genius API](https://genius.com/api-clients) (for lyrics)
+Optional:
 
-## Commands
+- `GENIUS_API_KEY` ([genius.com/api-clients](https://genius.com/api-clients)) — enables `/music lyrics`.
+- `SYNC_GUILD_ID` — instant guild-scoped command sync for development instead of global sync.
+- Cookies: `touch data/cookies.txt` and paste Netscape-format cookies for age-restricted / members-only videos.
+- Logs land in `data/logs/bot.log` (rotating, 3 x 10 MB).
 
-Commands are restricted to specific channels that the bot creates. All commands can be seen via "/help" (ViP)
+## Local development (no Docker)
 
-## Requirements
+```bash
+uv sync
+uv run python -m bot
+```
 
-- Python 3.8+
-- FFmpeg (for music functionality)
-- Cairo libraries (for chess board rendering)
+Without `POT_PROVIDER_URL` set, yt-dlp falls back to tokenless clients — fine for testing, unreliable on datacenter IPs.
 
-## Installation Notes
+## Stack
 
-The startup scripts handle virtual environment setup and dependency installation automatically. All required Python packages are listed in `requirements.txt`.
-
-## License
-
-This project is open source. See individual dependencies for their licenses.
+- Python 3.13, discord.py 2.7, yt-dlp, uv
+- FFmpeg + Cairo (chess board rendering) in the image
+- Non-root container, `restart: unless-stopped`
