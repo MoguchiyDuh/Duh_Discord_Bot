@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import logging
 import random
+import re
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -12,8 +14,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import EMBED_COLOR, BaseCog, channel_allowed
-from bot.music.player import GuildPlayer
-from bot.music.views import PlaylistSelectionView, TrackSelectionView, parse_selection
+from bot.music.player import LOOP_MODES, GuildPlayer
+from bot.music.views import NowPlayingView, PlaylistSelectionView, TrackSelectionView, parse_selection
 from bot.services.lyrics import LyricsError
 from bot.services.youtube import Track, YouTubeError
 
@@ -107,7 +109,8 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             assert interaction.guild is not None
             text_channel = _text_channel(interaction)
             assert text_channel is not None
-            player = GuildPlayer(self, interaction.guild, text_channel, voice)
+            queue_dir = self.bot.settings.data_dir / "queues"
+            player = GuildPlayer(self, interaction.guild, text_channel, voice, queue_dir)
             self.players[guild_id] = player
             logger.info(
                 "Joined voice channel %r in %s", voice_state.channel.name, interaction.guild.name
@@ -124,9 +127,20 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
     async def announce_now_playing(player: GuildPlayer) -> None:
         if player.current is None:
             return
-        embed = _now_playing_embed(player.current, player.queue)
-        with contextlib.suppress(discord.HTTPException):
-            await player.text_channel.send(embed=embed)
+        if player.now_view:
+            player.now_view.stop()
+        embed = _now_playing_embed(player.current, player.queue, player.loop_mode)
+        view = NowPlayingView(player)
+        try:
+            if player.now_message is not None:
+                player.now_message = await player.now_message.edit(embed=embed, view=view)
+            else:
+                player.now_message = await player.text_channel.send(embed=embed, view=view)
+        except discord.HTTPException:
+            player.now_message = None
+            player.now_view = None
+            return
+        player.now_view = view
 
     @app_commands.command(name="join", description="➕ Joins your voice channel.")
     @channel_allowed(__file__)
@@ -153,10 +167,15 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         name="play",
         description="▶️ Play music from YouTube. Supports URLs, playlists, or search queries.",
     )
-    @app_commands.describe(query="YouTube URL, playlist URL, or search query")
+    @app_commands.describe(
+        query="YouTube URL, playlist URL, or search query",
+        front="Play this next, before the rest of the queue",
+    )
     @channel_allowed(__file__)
     @app_commands.guild_only()
-    async def play(self, interaction: discord.Interaction, query: str) -> None:
+    async def play(
+        self, interaction: discord.Interaction, query: str, front: bool = False
+    ) -> None:
         query = query.strip()
         if not query:
             await interaction.response.send_message("❌ Query cannot be empty.", ephemeral=True)
@@ -181,12 +200,12 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         try:
             if query.startswith(("http://", "https://")):
                 if "list=" in query:
-                    await self._play_playlist(interaction, player, query)
+                    await self._play_playlist(interaction, player, query, front=front)
                 else:
                     track = await self.bot.youtube.track(query)
-                    await self._enqueue(interaction, player, [track])
+                    await self._enqueue(interaction, player, [track], front=front)
             else:
-                await self._play_search(interaction, player, query)
+                await self._play_search(interaction, player, query, front=front)
         except YouTubeError as exc:
             logger.warning("Play failed for %r: %s", query, exc)
             await interaction.followup.send("❌ Could not fetch that track.", ephemeral=True)
@@ -197,7 +216,12 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             )
 
     async def _play_search(
-        self, interaction: discord.Interaction, player: GuildPlayer, query: str
+        self,
+        interaction: discord.Interaction,
+        player: GuildPlayer,
+        query: str,
+        *,
+        front: bool = False,
     ) -> None:
         results = await self.bot.youtube.search(query)
         if not results:
@@ -214,16 +238,23 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             embed.add_field(name=f"{index}. {track.title[:80]}{duration}", value="\u200b", inline=False)
         embed.set_footer(text="Selection will timeout in 60 seconds")
 
-        view = TrackSelectionView(results, interaction.user.id)
+        view = TrackSelectionView(
+            results, interaction.user.id, timeout=self.search_timeout
+        )
         view.message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         await view.wait()
 
         if view.selected is None:
             return
-        await self._enqueue(interaction, player, [view.selected])
+        await self._enqueue(interaction, player, [view.selected], front=front)
 
     async def _play_playlist(
-        self, interaction: discord.Interaction, player: GuildPlayer, playlist_url: str
+        self,
+        interaction: discord.Interaction,
+        player: GuildPlayer,
+        playlist_url: str,
+        *,
+        front: bool = False,
     ) -> None:
         tracks = await self.bot.youtube.playlist(playlist_url)
         if not tracks:
@@ -244,7 +275,9 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         )
         embed.set_footer(text="Selection will timeout in 60 seconds")
 
-        view = PlaylistSelectionView(len(tracks), interaction.user.id)
+        view = PlaylistSelectionView(
+            len(tracks), interaction.user.id, timeout=self.search_timeout
+        )
         view.message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         await view.wait()
 
@@ -261,7 +294,9 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 return
 
         selected = [tracks[index - 1] for index in sorted(indices)]
-        await self._enqueue(interaction, player, selected, bulk=True)
+        if front:
+            selected.reverse()
+        await self._enqueue(interaction, player, selected, front=front, bulk=True)
 
     async def _enqueue(
         self,
@@ -269,30 +304,40 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         player: GuildPlayer,
         tracks: list[Track],
         *,
+        front: bool = False,
         bulk: bool = False,
     ) -> None:
-        added = await player.enqueue(tracks)
+        added = await player.enqueue(tracks, front=front)
         if added == 0:
             await interaction.followup.send(
                 f"📛 Queue is full! Limit {self.max_queue}.", ephemeral=True
             )
             return
 
+        restore_note = ""
+        if player.restored:
+            restore_note = f"\n♻️ Restored {player.restored} track(s) from the last session"
+            player.restored = 0
+
         if bulk:
             skipped = len(tracks) - added
             message = f"✅ Added {added} track(s) from playlist"
             if skipped:
                 message += f" (queue full, {skipped} skipped)"
-            await interaction.followup.send(message)
+            await interaction.followup.send(message + restore_note, ephemeral=True)
         else:
             track = tracks[0]
-            if player.is_active or len(player.queue) > 1:
-                position = len(player.queue)
+            if player.is_active:
+                position = 1 if front else len(player.queue)
+                label = "Playing next" if front else "Added to queue"
                 await interaction.followup.send(
-                    f"➕ Added to queue (#{position}): **{track.title}**"
+                    f"➕ {label} (#{position}): **{track.title}**{restore_note}",
+                    ephemeral=True,
                 )
             else:
-                await interaction.followup.send(f"▶️ Playing: **{track.title}**")
+                await interaction.followup.send(
+                    f"▶️ Playing: **{track.title}**{restore_note}", ephemeral=True
+                )
 
     @app_commands.command(name="skip", description="⏭️ Skip tracks by index or range.")
     @app_commands.describe(query="Index or range to skip (e.g. '1', '0' current track, '1-3')")
@@ -342,6 +387,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if remove:
             player.queue.clear()
             player.queue.extend(t for i, t in enumerate(queued, start=1) if i not in remove)
+            player.save_queue()
 
         if not skipped:
             await interaction.response.send_message(
@@ -350,6 +396,12 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             return
 
         if 0 in indices:
+            if player.now_message:
+                with contextlib.suppress(discord.HTTPException):
+                    await player.now_message.edit(
+                        content="⏭️ Skipped.", embed=None, view=None
+                    )
+                player.now_message = None
             player.kick()
         logger.info("Skipped: %s", ", ".join(t.title for t in skipped))
         await interaction.response.send_message(f"⏭ Skipped {len(skipped)} track(s)")
@@ -368,7 +420,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             for index, track in enumerate(itertools.islice(player.queue, 10), start=1)
         )
         embed = discord.Embed(
-            title=f"📜 Queue ({len(player.queue)} tracks)",
+            title=f"📜 Queue ({len(player.queue)} tracks) • Loop: {player.loop_mode}",
             description=queue_list,
             color=EMBED_COLOR,
         )
@@ -418,17 +470,35 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         player.voice.resume()
         await interaction.response.send_message("▶️ Playback resumed.")
 
-    @app_commands.command(name="loop", description="🔁 Toggle looping of the current track.")
+    @app_commands.command(
+        name="loop",
+        description="🔁 Loop the current track, the whole queue, or nothing.",
+    )
+    @app_commands.describe(mode="Loop mode (cycles off → track → queue if omitted)")
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Off", value="off"),
+            app_commands.Choice(name="Track", value="track"),
+            app_commands.Choice(name="Queue", value="queue"),
+        ]
+    )
     @channel_allowed(__file__)
     @app_commands.guild_only()
-    async def loop(self, interaction: discord.Interaction) -> None:
+    async def loop(
+        self, interaction: discord.Interaction, mode: app_commands.Choice[str] | None = None
+    ) -> None:
         player = self.players.get(interaction.guild_id)
-        if not player or not player.current:
+        if not player:
             await interaction.response.send_message("🔇 I'm not playing anything.", ephemeral=True)
             return
-        player.loop = not player.loop
-        status = "enabled" if player.loop else "disabled"
-        await interaction.response.send_message(f"🔁 Loop {status}.")
+        new_mode = mode.value if mode else player.cycle_loop()
+        if new_mode not in LOOP_MODES:
+            await interaction.response.send_message("❌ Invalid loop mode.", ephemeral=True)
+            return
+        player.loop_mode = new_mode
+        player.save_queue()
+        emoji = {"off": "▶️", "track": "🔁", "queue": "🔄"}[new_mode]
+        await interaction.response.send_message(f"{emoji} Loop mode: **{new_mode}**")
 
     @app_commands.command(name="shuffle", description="🔀 Shuffle the current queue.")
     @channel_allowed(__file__)
@@ -453,7 +523,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 "ℹ️ The queue is already empty.", ephemeral=True
             )
             return
-        player.queue.clear()
+        player.clear_queue()
         await interaction.response.send_message("🗑️ Queue cleared.")
 
     @app_commands.command(name="lyrics", description="📝 Get lyrics for a song.")
@@ -484,18 +554,22 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
             return
 
-        for index, chunk in enumerate(fetched.text):
-            embed = discord.Embed(
-                title=f"🎵 {fetched.title}" if index == 0 else None,
-                description=chunk,
-                color=EMBED_COLOR,
-            )
-            await interaction.followup.send(embed=embed)
+        safe_name = re.sub(r"[^\w\-. ]", "", fetched.title).strip()[:64] or "lyrics"
+        data = io.BytesIO(fetched.text.encode("utf-8"))
+        file = discord.File(data, filename=f"{safe_name}.txt")
+        embed = discord.Embed(
+            title=f"🎵 {fetched.title}",
+            description=f"[Lyrics page]({fetched.url})",
+            color=EMBED_COLOR,
+        )
+        await interaction.followup.send(embed=embed, file=file)
 
 
-def _now_playing_embed(track: Track, queue: deque[Track]) -> discord.Embed:
+def _now_playing_embed(track: Track, queue: deque[Track], loop_mode: str = "off") -> discord.Embed:
+    loop_badge = {"track": "🔁", "queue": "🔄"}.get(loop_mode)
+    title = "🎶 Now Playing" + (f" {loop_badge}" if loop_badge else "")
     embed = discord.Embed(
-        title="🎶 Now Playing",
+        title=title,
         description=f"[{track.title}]({track.page_url})",
         color=EMBED_COLOR,
     )

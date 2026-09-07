@@ -18,7 +18,7 @@ class LyricsError(Exception):
 @dataclass(slots=True)
 class Lyrics:
     title: str
-    text: list[str]
+    text: str
     url: str
 
 
@@ -27,28 +27,6 @@ def split_track_query(query: str) -> tuple[str, str | None]:
         artist, _, title = query.partition(" - ")
         return title.strip(), artist.strip()
     return query.strip(), None
-
-
-def split_into_chunks(text: str, max_size: int = 4000) -> list[str]:
-    lines: list[str] = []
-    for raw in text.split("\n"):
-        while len(raw) > max_size:
-            lines.append(raw[:max_size])
-            raw = raw[max_size:]
-        lines.append(raw)
-
-    chunks: list[str] = []
-    current = ""
-    for line in lines:
-        candidate = f"{current}{line}\n"
-        if len(candidate) > max_size and current:
-            chunks.append(current.rstrip())
-            current = f"{line}\n"
-        else:
-            current = candidate
-    if current.strip():
-        chunks.append(current.rstrip())
-    return chunks
 
 
 class LyricsService:
@@ -88,5 +66,4 @@ class LyricsService:
             raise LyricsError("track not found on Genius")
 
         raw = song.lyrics or ""
-        text = split_into_chunks(f"{raw}\n\n🔗 Lyrics page: {song.url}")
-        return Lyrics(title=f"{song.artist} - {song.title}", text=text, url=song.url)
+        return Lyrics(title=f"{song.artist} - {song.title}", text=raw, url=song.url)

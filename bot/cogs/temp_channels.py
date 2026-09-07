@@ -78,7 +78,15 @@ class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
-        if after.channel and after.channel.name == VOICE_HUB:
+        hub_id = (
+            self.bot.channels.channel_id(member.guild.id, VOICE_HUB)
+            if self.bot.channels
+            else None
+        )
+        is_hub = after.channel is not None and (
+            after.channel.id == hub_id or after.channel.name == VOICE_HUB
+        )
+        if is_hub:
             if self.bot.channels:
                 await self.bot.channels.ensure(member.guild)
 

@@ -40,12 +40,34 @@ class Track:
             return f"{hours}:{minutes:02}:{seconds:02}"
         return f"{minutes}:{seconds:02}"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "page_url": self.page_url,
+            "title": self.title,
+            "duration": self.duration,
+            "thumbnail": self.thumbnail,
+            "author": self.author,
+            "author_url": self.author_url,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Track:
+        return cls(
+            page_url=data["page_url"],
+            title=data["title"],
+            duration=data.get("duration"),
+            thumbnail=data.get("thumbnail"),
+            author=data.get("author"),
+            author_url=data.get("author_url"),
+        )
+
 
 class YouTube:
     def __init__(self, settings: Settings) -> None:
         self._cookies_path = settings.cookies_path
         self._max_search = settings.max_search_results
         self._max_playlist = settings.max_playlist_fetch
+        self._semaphore = asyncio.Semaphore(1)
         self._base_options: dict[str, Any] = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -87,7 +109,8 @@ class YouTube:
             return [info]
 
         try:
-            result = await asyncio.to_thread(_run)
+            async with self._semaphore:
+                result = await asyncio.to_thread(_run)
         except Exception as exc:
             logger.error("yt-dlp failed for %r: %s", query, exc)
             raise YouTubeError(f"extraction failed: {exc}") from exc

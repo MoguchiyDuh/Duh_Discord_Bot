@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING
 
 import discord
 
 from bot.services.youtube import Track
+
+if TYPE_CHECKING:
+    from bot.music.player import GuildPlayer
 
 
 def parse_selection(selection: str, max_count: int) -> set[int]:
@@ -126,3 +130,55 @@ class PlaylistRangeModal(discord.ui.Modal, title="Select Playlist Range"):
         self.parent.selection = self.selection_input.value
         await interaction.response.defer()
         await self.parent.dispose("📜 Adding selected tracks…")
+
+
+class NowPlayingView(discord.ui.View):
+    def __init__(self, player: GuildPlayer) -> None:
+        super().__init__(timeout=None)
+        self.player = player
+        self._sync_buttons()
+
+    def _sync_buttons(self) -> None:
+        playing = self.player.voice.is_playing() if self.player.voice else False
+        self.pause_resume.label = "Pause" if playing else "Resume"
+        self.pause_resume.emoji = "⏸️" if playing else "▶️"
+        mode = self.player.loop_mode
+        self.loop_cycle.label = f"Loop: {mode}"
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        player = self.player
+        if interaction.guild_id != player.guild.id:
+            return False
+        if not player.voice or not player.voice.is_connected():
+            await interaction.response.edit_message(view=None)
+            self.stop()
+            return False
+        return True
+
+    @discord.ui.button(label="Pause", emoji="⏸️", style=discord.ButtonStyle.primary)
+    async def pause_resume(
+        self, interaction: discord.Interaction, _: discord.ui.Button
+    ) -> None:
+        if self.player.voice.is_playing():
+            self.player.voice.pause()
+        elif self.player.voice.is_paused():
+            self.player.voice.resume()
+        self._sync_buttons()
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary)
+    async def skip(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        self.stop()
+        self.player.stop_current()
+        self.player.kick()
+        await interaction.response.edit_message(
+            content="⏭️ Skipped.", embed=None, view=None
+        )
+
+    @discord.ui.button(label="Loop: off", emoji="🔁", style=discord.ButtonStyle.secondary)
+    async def loop_cycle(
+        self, interaction: discord.Interaction, _: discord.ui.Button
+    ) -> None:
+        self.player.cycle_loop()
+        self._sync_buttons()
+        await interaction.response.edit_message(view=self)

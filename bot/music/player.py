@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -22,6 +24,8 @@ FFMPEG_OPTIONS = {
 
 MAX_CONSECUTIVE_FAILURES = 5
 
+LOOP_MODES = ("off", "track", "queue")
+
 
 def _consume_future(future: asyncio.Future[None]) -> None:
     with contextlib.suppress(asyncio.CancelledError):
@@ -35,6 +39,7 @@ class GuildPlayer:
         guild: discord.Guild,
         text_channel: discord.abc.Messageable,
         voice: discord.VoiceClient,
+        queue_dir: Path,
     ) -> None:
         self.cog = cog
         self.guild = guild
@@ -42,12 +47,17 @@ class GuildPlayer:
         self.voice = voice
         self.queue: deque[Track] = deque()
         self.current: Track | None = None
-        self.loop = False
+        self.loop_mode: str = "off"
+        self.now_message: discord.Message | None = None
+        self.now_view: discord.ui.View | None = None
+        self.restored = 0
         self._lock = asyncio.Lock()
         self._session = 0
         self._stopping = False
         self._idle_task: asyncio.Task[None] | None = None
         self._advance_task: asyncio.Task[None] | None = None
+        self._queue_file = queue_dir / f"{guild.id}.json"
+        self._load_queue()
 
     @property
     def is_active(self) -> bool:
@@ -56,16 +66,32 @@ class GuildPlayer:
     def move_to(self, channel: discord.abc.Connectable) -> None:
         self.voice.move_to(channel)
 
-    async def enqueue(self, tracks: list[Track]) -> int:
-        added = 0
+    async def enqueue(self, tracks: list[Track], *, front: bool = False) -> int:
+        added: list[Track] = []
         for track in tracks:
             if len(self.queue) >= self.cog.max_queue:
                 break
-            self.queue.append(track)
-            added += 1
-        if added and not self.is_active:
-            self.kick()
-        return added
+            if front:
+                self.queue.appendleft(track)
+            else:
+                self.queue.append(track)
+            added.append(track)
+        if added:
+            self.save_queue()
+            if not self.is_active:
+                self.kick()
+        return len(added)
+
+    def clear_queue(self) -> None:
+        self.queue.clear()
+        with contextlib.suppress(OSError):
+            self._queue_file.unlink(missing_ok=True)
+
+    def cycle_loop(self) -> str:
+        index = LOOP_MODES.index(self.loop_mode)
+        self.loop_mode = LOOP_MODES[(index + 1) % len(LOOP_MODES)]
+        self.save_queue()
+        return self.loop_mode
 
     def kick(self) -> None:
         self._cancel_idle()
@@ -87,10 +113,11 @@ class GuildPlayer:
             self._cancel_idle()
             failures = 0
             while not self._stopping and not self.is_active:
-                if self.loop and self.current is not None:
+                if self.loop_mode == "track" and self.current is not None:
                     track = self.current
                 elif self.queue:
                     track = self.queue.popleft()
+                    self.save_queue()
                 else:
                     self.current = None
                     self._schedule_idle()
@@ -131,6 +158,9 @@ class GuildPlayer:
             async def _finish() -> None:
                 if session != self._session or self._stopping:
                     return
+                if self.loop_mode == "queue" and self.current is not None:
+                    self.queue.append(self.current)
+                    self.save_queue()
                 await self.advance()
 
             future = asyncio.run_coroutine_threadsafe(_finish(), self.cog.bot.loop)
@@ -144,6 +174,16 @@ class GuildPlayer:
         self._cancel_idle()
         if self._advance_task and not self._advance_task.done():
             self._advance_task.cancel()
+        if self.now_view:
+            self.now_view.stop()
+        if self.now_message is not None:
+            with contextlib.suppress(discord.HTTPException):
+                await self.now_message.delete()
+            self.now_message = None
+        if self.current is not None:
+            self.queue.appendleft(self.current)
+            self.current = None
+            self.save_queue()
         try:
             if self.is_active:
                 self.voice.stop()
@@ -155,6 +195,29 @@ class GuildPlayer:
         finally:
             self.queue.clear()
             self.current = None
+
+    def _load_queue(self) -> None:
+        try:
+            data = json.loads(self._queue_file.read_text("utf-8"))
+            tracks = [Track.from_dict(entry) for entry in data.get("queue", [])]
+        except (OSError, ValueError, KeyError, TypeError):
+            return
+        self.queue.extend(tracks[: self.cog.max_queue])
+        if data.get("loop") in LOOP_MODES:
+            self.loop_mode = data["loop"]
+        self.restored = len(self.queue)
+        if self.restored:
+            logger.info("Restored %d queued track(s) for %s", self.restored, self.guild.name)
+
+    def save_queue(self) -> None:
+        payload = {"loop": self.loop_mode, "queue": [t.to_dict() for t in self.queue]}
+        try:
+            self._queue_file.parent.mkdir(parents=True, exist_ok=True)
+            self._queue_file.write_text(
+                json.dumps(payload, ensure_ascii=False), "utf-8"
+            )
+        except OSError:
+            logger.exception("Failed to persist queue for %s", self.guild.name)
 
     def _schedule_idle(self) -> None:
         self._cancel_idle()

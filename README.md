@@ -6,7 +6,8 @@ Slash commands only.
 
 ## Features
 
-- **Music**: YouTube playback with queue, playlists, search, lyrics, loop/shuffle. Stream URLs are resolved at play time, so long queues never expire.
+- **Music**: YouTube playback with queue, playlists, search, lyrics, loop (track/queue), play-next, and pause/skip/loop buttons on the now-playing message. Stream URLs are resolved at play time, so long queues never expire.
+- **Queue persistence**: queues (and loop mode) survive bot restarts, `/music leave`, and idle disconnects.
 - **PO Token provider**: ships with a `bgutil-ytdlp-pot-provider` sidecar so YouTube extraction keeps working from VPS IPs.
 - **Minigames**: Chess, Tic-Tac-Toe, Connect Four in private threads.
 - **Temporary channels**: "Join to Create" voice hub with owner controls (lock, limit, rename, kick, mute).
