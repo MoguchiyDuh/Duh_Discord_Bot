@@ -26,6 +26,7 @@ COG_CHANNELS: dict[str, list[str]] = {
     "minigames": ["🎮┃minigames"],
     "miscellaneous": ["🛠️┃bot-commands"],
     "music": ["🎤┃media-hub"],
+    "polls": ["🛠️┃bot-commands"],
     "temp_channels": ["🎤┃media-hub"],
     "weather": ["🛠️┃bot-commands"],
     "randomizer": ["🛠️┃bot-commands"],
