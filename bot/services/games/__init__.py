@@ -45,6 +45,9 @@ class Game(ABC):
     def set_starting_player(self, player: discord.Member) -> None:
         self._current_player_index = self.players.index(player)
 
+    def next_turn(self) -> None:
+        self._current_player_index = (self._current_player_index + 1) % len(self.players)
+
     def assign_roles(self, roles: tuple[Any, ...]) -> dict[discord.Member, Any]:
         if len(self.players) != len(roles):
             raise ValueError(f"Expected {len(self.players)} roles, got {len(roles)}")
