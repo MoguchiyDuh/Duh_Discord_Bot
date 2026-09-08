@@ -241,9 +241,8 @@ class PlayerCardView(discord.ui.View):
         await self.cog.act_lyrics(interaction)
 
     @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, row=1)
-    async def stop(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+    async def stop_session(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
-        self.stop()
         await self.cog.act_stop(self.player, interaction.user.display_name)
 
 
@@ -284,6 +283,18 @@ class AddSongModal(discord.ui.Modal, title="Add a Song"):
         max_length=500,
     )
 
+    position = discord.ui.Select(
+        placeholder="Where should it go?",
+        options=[
+            discord.SelectOption(
+                label="Add to queue", description="After the current queue", value="queue", default=True
+            ),
+            discord.SelectOption(
+                label="Play next", description="Before everything else", value="next"
+            ),
+        ],
+    )
+
     def __init__(self, cog: MusicCog, player: GuildPlayer) -> None:
         super().__init__()
         self.cog = cog
@@ -291,7 +302,8 @@ class AddSongModal(discord.ui.Modal, title="Add a Song"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self.cog.act_add(interaction, self.player, self.query_input.value.strip())
+        front = self.position.values[0] == "next"
+        await self.cog.act_add(interaction, self.player, self.query_input.value.strip(), front=front)
 
 
 class SearchPickerView(discord.ui.View):

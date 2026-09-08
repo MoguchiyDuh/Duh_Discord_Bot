@@ -168,7 +168,18 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         player = self.players.get(guild_id)
 
         if player is None:
-            voice = await voice_state.channel.connect(self_deaf=True)
+            voice = interaction.guild.voice_client
+            if voice is not None and not voice.is_connected():
+                with contextlib.suppress(Exception):
+                    await voice.disconnect(force=True)
+                voice = None
+            if voice is None:
+                try:
+                    voice = await voice_state.channel.connect(self_deaf=True)
+                except discord.ClientException:
+                    voice = interaction.guild.voice_client
+                    if voice is None:
+                        raise
             assert interaction.guild is not None
             text_channel = _text_channel(interaction)
             assert text_channel is not None
@@ -232,6 +243,8 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         if requester:
             if bulk:
                 player.note_event(f"➕ {requester} added {added} tracks")
+            elif front:
+                player.note_event(f"⏭️ {requester} queued {tracks[0].title[:40]} (next)")
             else:
                 player.note_event(f"➕ {requester} added {tracks[0].title[:40]}")
 
@@ -244,12 +257,14 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 await interaction.followup.send(message + restore_note, ephemeral=True)
             else:
                 track = tracks[0]
-                position = 1 if front else len(player.queue)
-                label = "Playing next" if front else "Added to queue"
                 if not player.is_active and player.current is None:
-                    label = "Starting"
+                    label, icon = "Starting", "▶️"
+                elif front:
+                    label, icon = "Playing next", "⏭️"
+                else:
+                    label, icon = f"Added to queue (#{len(player.queue)})", "➕"
                 await interaction.followup.send(
-                    f"➕ {label} (#{position}): **{track.title}**{restore_note}",
+                    f"{icon} {label}: **{track.title}**{restore_note}",
                     ephemeral=True,
                 )
         return added
@@ -345,13 +360,15 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         return "Nothing is playing."
 
     async def act_skip(self, player: GuildPlayer, name: str) -> str | None:
-        if player.current is None:
+        if player.current is None and not player.queue:
             return "Nothing is playing."
-        track = player.stop_current()
+        track = player.stop_current() if player.current is not None else None
         if track is not None:
             player.history.append(track)
-        player.skips[name] += 1
-        player.note_event(f"⏭️ {name} skipped {track.title[:40]}")
+            player.skips[name] += 1
+            player.note_event(f"⏭️ {name} skipped {track.title[:40]}")
+        else:
+            player.note_event(f"⏭️ {name} skipped ahead")
         player.kick()
         return None
 

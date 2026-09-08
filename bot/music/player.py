@@ -26,7 +26,7 @@ FFMPEG_OPTIONS = {
 
 MAX_CONSECUTIVE_FAILURES = 5
 
-VOLUME_GAIN = 0.3
+VOLUME_GAIN = 0.2
 
 MAX_VOLUME = 1.5
 
@@ -216,6 +216,9 @@ class GuildPlayer:
                 if self.loop_mode == "track" and self.current is not None:
                     track = self.current
                 elif self.queue:
+                    if self.loop_mode == "queue" and previous is not None:
+                        self.queue.append(previous)
+                        self.save_queue()
                     track = self.queue.popleft()
                     self.save_queue()
                 else:
