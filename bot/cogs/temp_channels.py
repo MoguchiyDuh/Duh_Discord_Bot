@@ -25,6 +25,8 @@ class TempChannelInfo:
 
 
 class TempChannels(BaseCog, commands.GroupCog, name="temp_channels"):
+    """🔊 Manage your join-to-create voice channel"""
+
     def __init__(self, bot: DuhBot) -> None:
         super().__init__(bot)
         self.temp_channels: dict[int, TempChannelInfo] = {}

@@ -43,6 +43,8 @@ def _text_channel(interaction: discord.Interaction) -> discord.abc.Messageable |
 
 
 class MusicCog(BaseCog, commands.GroupCog, name="music"):
+    """▶️ YouTube & SoundCloud playback with queue management and lyrics"""
+
     def __init__(self, bot: DuhBot) -> None:
         super().__init__(bot)
         self.players: dict[int, GuildPlayer] = {}

@@ -5,7 +5,7 @@ import pkgutil
 from typing import TYPE_CHECKING
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.services.channels import ChannelService
 from bot.services.lyrics import LyricsService
@@ -27,6 +27,7 @@ class DuhBot(commands.Bot):
         self.channels: ChannelService | None = None
         self.youtube: YouTube | None = None
         self.lyrics: LyricsService | None = None
+        self._presence_index = 0
 
     async def setup_hook(self) -> None:
         self.channels = ChannelService(self)
@@ -70,3 +71,19 @@ class DuhBot(commands.Bot):
         if self.channels:
             for guild in self.guilds:
                 await self.channels.ensure(guild)
+        if not self.presence_loop.is_running():
+            self.presence_loop.start()
+
+    async def close(self) -> None:
+        self.presence_loop.cancel()
+        await super().close()
+
+    @tasks.loop(minutes=10)
+    async def presence_loop(self) -> None:
+        count = len(self.guilds)
+        activities: tuple[discord.BaseActivity, ...] = (
+            discord.Game(name=f"/help [{count}]"),
+            discord.Activity(type=discord.ActivityType.listening, name=f"/music play [{count}]"),
+        )
+        await self.change_presence(activity=activities[self._presence_index % len(activities)])
+        self._presence_index += 1

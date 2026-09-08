@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class MinigamesCog(BaseCog, commands.GroupCog, name="minigames"):
+    """🎮 Chess, tic-tac-toe & connect four in private threads"""
+
     def __init__(self, bot: DuhBot) -> None:
         super().__init__(bot)
         self.active_games: dict[int, Game] = {}

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 CATEGORIES: dict[str, dict[str, Any]] = {
     "overview": {
         "title": "🤖 Duh Discord Bot - Overview",
-        "description": "A multipurpose Discord bot with music, games, and utilities to enhance your server experience!",
+        "description": "Music with queues, minigames, temporary voice channels, polls, weather & utilities.",
         "commands": [
             "💡 /help - Show this interactive help menu",
             "🔒 Commands are restricted to specific channels for organization",
@@ -29,22 +29,35 @@ CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "music": {
         "title": "🎵 Music Commands",
-        "description": "🎧 Transform your server into a concert hall! Play music from YouTube with complete queue management.",
+        "description": "🎧 YouTube & SoundCloud playback with a live player card and full queue control.",
         "commands": [
             "➕ /music join - Join your voice channel",
-            "▶️ /music play <query> - Play music (YouTube URL, playlist, or search!)",
+            "▶️ /music play <query> - URL, playlist, or search; prefix `sc:` for SoundCloud",
+            "⏭️ /music skip [range] - Skip the current track, an index, or a range (e.g. 1-5)",
+            "⏩ /music seek <seconds> - Jump to a position in the current track",
             "⏸️ /music pause - Pause the current track",
             "▶️ /music resume - Resume playback",
-            "⏭️ /music skip [range] - Skip tracks (e.g. skip, skip 3, skip 1-5)",
-            "📜 /music queue - See what's coming up next",
-            "🎵 /music current - What's playing right now?",
-            "🔀 /music shuffle - Shuffle your queue",
-            "🔁 /music loop - Repeat the current track",
-            "🧹 /music clear - Clear the entire queue",
-            "📝 /music lyrics [song] - Get lyrics for a song",
-            "🚪 /music leave - Leave the voice channel",
+            "🎵 /music current - Show the now-playing card",
+            "📜 /music queue - Show the queue page on the card",
+            "🔁 /music loop [mode] - Off / track / queue (cycles if omitted)",
+            "🔀 /music shuffle - Shuffle the queue",
+            "🔊 /music volume <0-150> - Set playback volume (100 = normal)",
+            "🧹 /music clear - Clear the queue",
+            "📝 /music lyrics [song] - Fetch lyrics as a file (needs GENIUS_API_KEY)",
+            "🚪 /music leave - Leave and end the session",
         ],
-        "footer": "🌟 Supports YouTube URLs, playlists, and any search terms!",
+        "footer": "🌟 Tip: set front on /music play to jump the queue — transport, volume & loop also live on the card!",
+    },
+    "polls": {
+        "title": "📊 Poll Commands",
+        "description": "🗳️ Run quick votes with live countdowns and instant results.",
+        "commands": [
+            "📊 /poll <question> <choices> - Button-vote poll with 2-10 comma-separated choices",
+            "⏱️ minutes - Duration until the poll ends (1-1440, default 5)",
+            "☑️ multi - Allow selecting multiple options",
+            "🔁 Voters can switch their vote or press again to unvote",
+        ],
+        "footer": "🏁 Ends with a results embed, winner highlighted!",
     },
     "minigames": {
         "title": "🎮 Fun & Games",
@@ -107,6 +120,7 @@ CATEGORIES: dict[str, dict[str, Any]] = {
 CATEGORY_ORDER = (
     "overview",
     "music",
+    "polls",
     "minigames",
     "random",
     "temp_channels",
@@ -122,6 +136,7 @@ class HelpSelect(discord.ui.Select["HelpView"]):
                 label={
                     "overview": "Overview",
                     "music": "Music",
+                    "polls": "Polls",
                     "minigames": "Minigames",
                     "random": "Generators",
                     "temp_channels": "Voice Channels",
@@ -132,6 +147,7 @@ class HelpSelect(discord.ui.Select["HelpView"]):
                 emoji={
                     "overview": "🏠",
                     "music": "🎵",
+                    "polls": "📊",
                     "minigames": "🎮",
                     "random": "🎲",
                     "temp_channels": "🔊",
@@ -186,7 +202,10 @@ class HelpCog(BaseCog):
     def __init__(self, bot: DuhBot) -> None:
         super().__init__(bot)
 
-    @app_commands.command(name="help", description="❓ Show help menu with all available commands")
+    @app_commands.command(
+        name="help",
+        description="❓ Music, minigames, temp voice channels, polls & more — browse by category",
+    )
     async def help_command(self, interaction: discord.Interaction) -> None:
         view = HelpView()
         await interaction.response.send_message(embed=build_embed(), view=view, ephemeral=True)
