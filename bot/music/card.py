@@ -180,13 +180,24 @@ def _render_queue(player: GuildPlayer) -> discord.Embed:
     player.queue_page = max(0, min(player.queue_page, pages - 1))
     start = player.queue_page * per_page
     chunk = queued[start : start + per_page]
-    lines = [
-        f"**{start + i}.** [{t.title[:60]}]({t.page_url})"
-        + (f" — {t.requester}" if t.requester else "")
-        for i, t in enumerate(chunk, start=1)
-    ]
+    lines: list[str] = []
+    used = 0
+    dropped = 0
+    for i, t in enumerate(chunk, start=1):
+        line = (
+            f"**{start + i}.** [{t.title[:60]}]({t.page_url})"
+            + (f" — {t.requester}" if t.requester else "")
+        )
+        if used + len(line) + (1 if lines else 0) > 1000:
+            dropped = len(chunk) - i + 1
+            break
+        lines.append(line)
+        used += len(line) + (1 if len(lines) > 1 else 0)
     if lines:
-        embed.add_field(name="Tracks", value="\n".join(lines), inline=False)
+        value = "\n".join(lines)
+        if dropped:
+            value += f"\n-# …and {dropped} more (▶ next page)"
+        embed.add_field(name="Tracks", value=value, inline=False)
     else:
         embed.add_field(name="Tracks", value="Queue is empty.", inline=False)
     embed.set_footer(text=f"Page {player.queue_page + 1}/{pages}")

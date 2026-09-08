@@ -286,6 +286,8 @@ class GuildPlayer:
                     self.touch_card()
                     self.kick()
                     return
+                if len(self.queue) >= self.cog.max_queue:
+                    return
                 self._mix_misses += 1
             self.mix_url = None
             self.note_event("📻 Mix exhausted")
