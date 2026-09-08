@@ -114,6 +114,22 @@ def test_card_view_sync_queue_page_shows_paging(make_player) -> None:
     assert view.nav_queue.style == discord.ButtonStyle.success
 
 
+def test_card_view_play_pause_reflects_state(make_player) -> None:
+    p = make_player()
+    p.current = make_track("A")
+    p.voice.source = object()
+    p.voice.playing = True
+    view = PlayerCardView(p.cog, p)
+    view.sync()
+    assert "⏸" in str(view.play_pause.emoji)
+    assert view.play_pause.style == discord.ButtonStyle.primary
+
+    p.voice.pause()
+    view.sync()
+    assert "▶" in str(view.play_pause.emoji)
+    assert view.play_pause.style == discord.ButtonStyle.success
+
+
 def test_card_view_sync_history_page_paging(make_player) -> None:
     p = make_player()
     p.page = "history"

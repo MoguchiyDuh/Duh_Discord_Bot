@@ -394,6 +394,15 @@ class PlayerCardView(discord.ui.View):
             button.style = (
                 discord.ButtonStyle.success if button is active else discord.ButtonStyle.secondary
             )
+        if player.voice.is_playing():
+            self.play_pause.emoji = "⏸️"
+            self.play_pause.style = discord.ButtonStyle.primary
+        elif player.voice.is_paused():
+            self.play_pause.emoji = "▶️"
+            self.play_pause.style = discord.ButtonStyle.success
+        else:
+            self.play_pause.emoji = "⏸️"
+            self.play_pause.style = discord.ButtonStyle.primary
         self.nav_queue.disabled = not (player.queue or has_current)
         self.nav_history.disabled = not player.history
         self.loop.disabled = not (has_current or player.queue)
