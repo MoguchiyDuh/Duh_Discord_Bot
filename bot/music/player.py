@@ -69,6 +69,7 @@ class GuildPlayer:
         self.skips: Counter[str] = Counter()
         self.page: str = "now"
         self.queue_page = 0
+        self.history_page = 0
         self.mix_url: str | None = None
         self._mix_loading = False
         self._mix_seen: set[str] = set()

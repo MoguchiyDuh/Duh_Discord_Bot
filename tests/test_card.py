@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+import discord
+
 from bot.music.card import (
     PlayerCardView,
     format_seconds,
@@ -69,55 +71,72 @@ def test_render_idle(make_player) -> None:
     assert embed.title.startswith("💤")
 
 
-def test_card_view_has_16_unique_button_ids(make_player) -> None:
+def test_card_view_has_17_unique_button_ids(make_player) -> None:
     p = make_player()
     view = PlayerCardView(p.cog, p)
     ids = [child.custom_id for child in view.children]
-    assert len(ids) == 16
-    assert len(set(ids)) == 16
+    assert len(ids) == 17
+    assert len(set(ids)) == 17
 
 
-def test_card_view_sync_disables_seek_without_current(make_player) -> None:
-    p = make_player()
-    p.current = None
-    view = PlayerCardView(p.cog, p)
-    view.sync()
-    assert view.seek_back.disabled
-    assert view.seek_fwd.disabled
-    assert view.mix_toggle.disabled
-
-
-def test_card_view_sync_enables_seek_with_current(make_player) -> None:
-    p = make_player()
-    p.current = make_track("A")
-    view = PlayerCardView(p.cog, p)
-    view.sync()
-    assert not view.seek_back.disabled
-    assert not view.seek_fwd.disabled
-    assert not view.mix_toggle.disabled
-
-
-def test_card_view_sync_reflects_mix_state(make_player) -> None:
-    import discord
-
+def test_card_view_sync_now_page_shows_transport(make_player) -> None:
     p = make_player()
     p.current = make_track("A")
     p.mix_url = "https://mymix"
     view = PlayerCardView(p.cog, p)
     view.sync()
+    assert view.prev in view.children and view.skip in view.children
+    assert view.page_back not in view.children
+    assert not view.seek_back.disabled
     assert view.mix_toggle.style == discord.ButtonStyle.success
 
 
-def test_card_view_sync_queue_paging(make_player) -> None:
+def test_card_view_sync_idle_now_page_hides_transport(make_player) -> None:
+    p = make_player()
+    view = PlayerCardView(p.cog, p)
+    view.sync()
+    assert view.prev not in view.children
+    assert view.mix_toggle.disabled
+    assert view.nav_queue.disabled
+
+
+def test_card_view_sync_queue_page_shows_paging(make_player) -> None:
     p = make_player()
     p.page = "queue"
     for i in range(25):
         p.queue.append(make_track(f"t{i}"))
-    p.queue_page = 0
     view = PlayerCardView(p.cog, p)
     view.sync()
-    assert view.queue_prev.disabled
-    assert not view.queue_next.disabled
+    assert view.page_back in view.children and view.page_fwd in view.children
+    assert view.prev not in view.children
+    assert view.page_back.disabled
+    assert not view.page_fwd.disabled
+    assert view.nav_queue.style == discord.ButtonStyle.success
+
+
+def test_card_view_sync_history_page_paging(make_player) -> None:
+    p = make_player()
+    p.page = "history"
+    for i in range(12):
+        p.history.append(make_track(f"h{i}"))
+    p.history_page = 1
+    view = PlayerCardView(p.cog, p)
+    view.sync()
+    assert not view.page_back.disabled
+    assert view.page_fwd.disabled
+    assert view.nav_history.style == discord.ButtonStyle.success
+
+
+def test_render_history_pagination(make_player) -> None:
+    p = make_player()
+    for i in range(25):
+        p.history.append(make_track(f"h{i}"))
+    p.page = "history"
+    p.history_page = 1
+
+    embed = render_card(p)
+    assert "Page 2/3" in embed.footer.text
+    assert "11." in embed.description
 
 
 def test_render_tombstone(make_player) -> None:
@@ -127,6 +146,33 @@ def test_render_tombstone(make_player) -> None:
     embed = render_tombstone(p)
     assert "Session ended" in embed.title
     assert "2 tracks" in embed.description
+
+
+async def test_position_picker_routes_front_flag() -> None:
+    from bot.music.card import PositionPickerView
+
+    calls: list[bool] = []
+
+    class PickerCog:
+        player = None
+
+        async def act_add(self, interaction, player, query, *, front):
+            calls.append(front)
+
+    class FakeResponse:
+        async def edit_message(self, **kwargs):
+            pass
+
+    class FakeInteraction:
+        response = FakeResponse()
+
+    cog = PickerCog()
+    player = object()
+    view = PositionPickerView(cog, player, "night of nights", "Kirill")
+    assert len(view.children) == 2
+    await view._choose(FakeInteraction(), False)
+    await view._choose(FakeInteraction(), True)
+    assert calls == [False, True]
 
 
 @pytest.mark.parametrize(

@@ -176,6 +176,7 @@ def _build_player(
     p.skips = collections.Counter()
     p.page = "now"
     p.queue_page = 0
+    p.history_page = 0
     p.card_message = None
     p.card_view = None
     p.card_dirty = True
