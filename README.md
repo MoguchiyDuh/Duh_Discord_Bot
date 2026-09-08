@@ -6,7 +6,8 @@ Slash commands only.
 
 ## Features
 
-- **Music**: YouTube playback with queue, playlists, search, lyrics, loop (track/queue), play-next, and a persistent player card — a single interactive message with two pages (now playing with progress bar, queue) and buttons for everything: prev/pause/skip, loop, shuffle, add song, volume, lyrics, stop. The card edits in place, shows a log of recent actions, and becomes a session-stats summary when playback ends. Volume is displayed 0-150% with 100% mapped to 30% raw gain (default 100%). Stream URLs are resolved at play time, so long queues never expire.
+- **Music**: YouTube and SoundCloud playback (prefix a search with `sc:` for SoundCloud) with queue, playlists, lyrics, loop (track/queue), play-next, and a persistent player card — a single interactive message with pages (now playing with progress bar + seek, queue with pagination, session history) and buttons for everything: prev/pause/skip, seek ±15s, loop, shuffle, add song, volume, lyrics, stop, and a 📻 mix toggle. YT mixes/radio pull dynamically: a batch plays, your added tracks jump ahead, the next batch loads only when the queue drains. The card edits in place, shows a log of recent actions, and becomes a session-stats summary when playback ends. Volume is displayed 0-150% with 100% mapped to 20% raw gain (default 100%). Stream URLs are resolved at play time, so long queues never expire.
+- **Fresh sessions**: ending a session (stop, leave, idle timeout) wipes the queue, history, loop and volume — the next session starts clean.
 - **Queue persistence**: queues (and loop mode, volume) survive bot restarts, `/music leave`, and idle disconnects. A dead card from a previous session is replaced with an ended marker on the next session.
 - **PO Token provider**: ships with a `bgutil-ytdlp-pot-provider` sidecar so YouTube extraction keeps working from VPS IPs.
 - **Minigames**: Chess, Tic-Tac-Toe, Connect Four in private threads.

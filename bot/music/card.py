@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     from bot.cogs.music import MusicCog
     from bot.music.player import GuildPlayer
 
+from bot.music.player import SEEK_STEP
+
 BAR_WIDTH = 18
+
+QUEUE_PAGE_SIZE = 10
 
 LOOP_LABELS = {"off": "off", "track": "track", "queue": "queue"}
 
@@ -54,9 +58,48 @@ def _events_field(player: GuildPlayer) -> discord.Embed:
 def render_card(player: GuildPlayer) -> discord.Embed:
     if player.page == "queue" and (player.queue or player.current):
         return _render_queue(player)
+    if player.page == "history" and (player.history or player.current or player.queue):
+        return _render_history(player)
     if player.current is None:
         return _render_idle(player)
     return _render_now(player)
+
+
+def _render_history(player: GuildPlayer) -> discord.Embed:
+    played = list(player.history)
+    embed = discord.Embed(title="🕘 Session History", color=discord.Color.blurple())
+    sections: list[str] = []
+    if player.current is not None:
+        cur = player.current
+        sections.append(
+            f"**Now:** [{cur.title[:70]}]({cur.page_url})\n"
+            f"-# {format_seconds(player.position)}"
+            + (f" — {cur.requester}" if cur.requester else "")
+        )
+    if played:
+        lines = [
+            f"{i}. [{t.title[:60]}]({t.page_url})"
+            + (f" — {t.requester}" if t.requester else "")
+            for i, t in enumerate(reversed(played), start=1)
+        ]
+        sections.append("**Played:**\n" + "\n".join(lines[:15]))
+        if len(played) > 15:
+            sections.append(f"-# …and {len(played) - 15} earlier")
+    if player.queue:
+        lines = [
+            f"{i}. [{t.title[:60]}]({t.page_url})"
+            + (f" — {t.requester}" if t.requester else "")
+            for i, t in enumerate(
+                itertools.islice(player.queue, 10), start=1
+            )
+        ]
+        more = len(player.queue) - 10
+        sections.append(
+            "**Up next:**\n" + "\n".join(lines)
+            + (f"\n-# …and {more} more" if more > 0 else "")
+        )
+    embed.description = "\n\n".join(sections)[:4000] or "Nothing yet."
+    return embed
 
 
 def _render_now(player: GuildPlayer) -> discord.Embed:
@@ -86,13 +129,15 @@ def _render_now(player: GuildPlayer) -> discord.Embed:
             value=f"[{nxt.title[:60]}]({nxt.page_url})",
             inline=True,
         )
-        embed.add_field(
-            name="Queue",
-            value=f"{len(player.queue)} tracks • {format_seconds(total_left)}",
-            inline=True,
-        )
+        queue_value = f"{len(player.queue)} tracks • {format_seconds(total_left)}"
+        if player.mix_url is not None:
+            queue_value += "\n📻 mix on" + (" — loading…" if player._mix_loading else "")
+        embed.add_field(name="Queue", value=queue_value, inline=True)
     else:
-        embed.add_field(name="Queue", value="Empty — ➕ to add", inline=True)
+        queue_value = "Empty — ➕ to add"
+        if player.mix_url is not None:
+            queue_value += "\n📻 mix on" + (" — loading…" if player._mix_loading else "")
+        embed.add_field(name="Queue", value=queue_value, inline=True)
     if player.events:
         embed.add_field(
             name="Recent",
@@ -130,7 +175,7 @@ def _render_queue(player: GuildPlayer) -> discord.Embed:
             f"**Now:** [{player.current.title[:70]}]({player.current.page_url})"
         )
 
-    per_page = 10
+    per_page = QUEUE_PAGE_SIZE
     pages = max(1, -(-len(queued) // per_page))
     player.queue_page = max(0, min(player.queue_page, pages - 1))
     start = player.queue_page * per_page
@@ -205,45 +250,109 @@ class PlayerCardView(discord.ui.View):
         await interaction.response.defer()
         await self.cog.act_play_pause(self.player, interaction.user.display_name)
 
+    @discord.ui.button(emoji="⏪", style=discord.ButtonStyle.secondary)
+    async def seek_back(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        error = await self.cog.act_seek(
+            self.player, interaction.user.display_name, -SEEK_STEP
+        )
+        if error:
+            await interaction.followup.send(f"ℹ️ {error}", ephemeral=True)
+
+    @discord.ui.button(emoji="⏩", style=discord.ButtonStyle.secondary)
+    async def seek_fwd(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        error = await self.cog.act_seek(
+            self.player, interaction.user.display_name, SEEK_STEP
+        )
+        if error:
+            await interaction.followup.send(f"ℹ️ {error}", ephemeral=True)
+
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
         await self.cog.act_skip(self.player, interaction.user.display_name)
 
-    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, row=1)
     async def loop(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
         mode = self.player.cycle_loop()
         self.player.note_event(f"🔁 Loop → {LOOP_LABELS[mode]} ({interaction.user.display_name})")
 
-    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=1)
     async def shuffle(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
         await self.cog.act_shuffle(self.player, interaction.user.display_name)
 
-    @discord.ui.button(emoji="📜", style=discord.ButtonStyle.secondary, row=1)
-    async def page_toggle(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary, row=1)
+    async def queue_prev(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
-        self.player.page = "now" if self.player.page == "queue" else "queue"
+        if self.player.queue_page > 0:
+            self.player.queue_page -= 1
+            self.player.touch_card()
+
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary, row=1)
+    async def queue_next(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        pages = max(1, -(-len(self.player.queue) // QUEUE_PAGE_SIZE))
+        if self.player.queue_page < pages - 1:
+            self.player.queue_page += 1
+            self.player.touch_card()
+
+    @discord.ui.button(emoji="🕘", style=discord.ButtonStyle.secondary, row=1)
+    async def history_page(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        self.player.page = "now" if self.player.page == "history" else "history"
         self.player.touch_card()
 
-    @discord.ui.button(emoji="➕", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(emoji="📜", style=discord.ButtonStyle.secondary, row=2)
+    async def page_toggle(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        self.player.page = "queue" if self.player.page != "queue" else "now"
+        self.player.touch_card()
+
+    @discord.ui.button(emoji="➕", style=discord.ButtonStyle.success, row=2)
     async def add_song(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.send_modal(AddSongModal(self.cog, self.player))
 
-    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=2)
     async def volume(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.send_modal(VolumeModal(self.cog, self.player))
 
-    @discord.ui.button(emoji="🎤", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="🎤", style=discord.ButtonStyle.secondary, row=2)
     async def lyrics(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
         await self.cog.act_lyrics(interaction)
 
-    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, row=2)
     async def stop_session(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.defer()
         await self.cog.act_stop(self.player, interaction.user.display_name)
+
+    @discord.ui.button(emoji="📻", style=discord.ButtonStyle.secondary, row=3)
+    async def mix_toggle(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        error = self.player.toggle_mix(interaction.user.display_name)
+        if error:
+            await interaction.followup.send(f"ℹ️ {error}", ephemeral=True)
+
+    def sync(self) -> None:
+        player = self.player
+        has_current = player.current is not None
+        self.seek_back.disabled = not has_current
+        self.seek_fwd.disabled = not has_current
+        on_queue = player.page == "queue"
+        pages = max(1, -(-len(player.queue) // QUEUE_PAGE_SIZE))
+        self.queue_prev.disabled = not on_queue or player.queue_page <= 0
+        self.queue_next.disabled = not on_queue or player.queue_page >= pages - 1
+        self.history_page.disabled = player.page == "history" and not (
+            player.history or player.queue or player.current
+        )
+        mix_on = player.mix_url is not None
+        self.mix_toggle.disabled = not mix_on and not has_current
+        self.mix_toggle.style = (
+            discord.ButtonStyle.success if mix_on else discord.ButtonStyle.secondary
+        )
 
 
 class VolumeModal(discord.ui.Modal, title="Set Volume"):

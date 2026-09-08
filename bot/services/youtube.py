@@ -137,6 +137,7 @@ class YouTube:
             page_url=url,
             title=entry.get("title") or "Unknown Title",
             duration=duration,
+            author=entry.get("uploader") or entry.get("channel"),
         )
 
     @staticmethod
@@ -169,6 +170,16 @@ class YouTube:
         logger.debug("Search %r -> %d results", query, len(tracks))
         return tracks
 
+    async def search_soundcloud(self, query: str) -> list[Track]:
+        entries = await self._extract(
+            f"scsearch{self._max_search}:{query}",
+            flat=True,
+            playlist=False,
+        )
+        tracks = [track for entry in entries if (track := self._from_flat(entry))]
+        logger.debug("SoundCloud search %r -> %d results", query, len(tracks))
+        return tracks
+
     async def playlist(self, url: str) -> list[Track]:
         entries = await self._extract(url, flat=True, playlist=True)
         tracks = [track for entry in entries if (track := self._from_flat(entry))]
@@ -184,7 +195,7 @@ class YouTube:
             raise YouTubeError("track is unavailable")
         return self._from_full(data)
 
-    async def stream_url(self, page_url: str) -> str:
+    async def resolve(self, page_url: str) -> tuple[str, int | None]:
         entries = await self._extract(page_url, flat=False, playlist=False)
         if not entries:
             raise YouTubeError("no stream returned")
@@ -196,4 +207,9 @@ class YouTube:
                 audio_url = formats[-1].get("url", "")
         if not audio_url:
             raise YouTubeError("no audio format found")
-        return audio_url
+        duration = data.get("duration")
+        try:
+            duration = int(float(duration)) if duration else None
+        except (TypeError, ValueError):
+            duration = None
+        return audio_url, duration

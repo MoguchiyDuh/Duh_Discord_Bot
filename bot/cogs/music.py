@@ -18,6 +18,7 @@ from bot.music.card import (
     render_card,
     render_tombstone,
 )
+from bot.music.card import format_seconds
 from bot.music.player import LOOP_MODES, GuildPlayer
 from bot.music.views import PlaylistSelectionView, parse_selection
 from bot.services.lyrics import LyricsError
@@ -97,11 +98,14 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             if player.card_message is None:
                 if player.card_view is None:
                     player.card_view = PlayerCardView(self, player)
+                player.card_view.sync()
                 player.card_message = await player.text_channel.send(
                     embed=embed, view=player.card_view, silent=True
                 )
                 player.save_queue()
             else:
+                if player.card_view is not None:
+                    player.card_view.sync()
                 player.card_message = await player.card_message.edit(
                     embed=embed, view=player.card_view
                 )
@@ -109,6 +113,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
             with contextlib.suppress(discord.HTTPException):
                 if player.card_view is None:
                     player.card_view = PlayerCardView(self, player)
+                player.card_view.sync()
                 player.card_message = await player.text_channel.send(
                     embed=embed, view=player.card_view, silent=True
                 )
@@ -235,11 +240,6 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 )
             return 0
 
-        restore_note = ""
-        if player.restored:
-            restore_note = f"\n♻️ Restored {player.restored} track(s) from the last session"
-            player.restored = 0
-
         if requester:
             if bulk:
                 player.note_event(f"➕ {requester} added {added} tracks")
@@ -254,7 +254,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 message = f"✅ Added {added} track(s) from playlist"
                 if skipped:
                     message += f" (queue full, {skipped} skipped)"
-                await interaction.followup.send(message + restore_note, ephemeral=True)
+                await interaction.followup.send(message, ephemeral=True)
             else:
                 track = tracks[0]
                 if not player.is_active and player.current is None:
@@ -264,7 +264,7 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                 else:
                     label, icon = f"Added to queue (#{len(player.queue)})", "➕"
                 await interaction.followup.send(
-                    f"{icon} {label}: **{track.title}**{restore_note}",
+                    f"{icon} {label}: **{track.title}**",
                     ephemeral=True,
                 )
         return added
@@ -290,6 +290,17 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     if not tracks:
                         await interaction.followup.send(
                             "ℹ️ Playlist is empty or unavailable.", ephemeral=True
+                        )
+                        return
+                    if "list=RD" in query:
+                        player.start_mix(query, tracks)
+                        await self.act_enqueue(
+                            interaction,
+                            player,
+                            tracks,
+                            front=front,
+                            requester=requester,
+                            bulk=True,
                         )
                         return
                     view = PlaylistSelectionView(
@@ -322,6 +333,21 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
                     await self.act_enqueue(
                         interaction, player, [track], front=front, requester=requester
                     )
+            elif query.lower().startswith("sc:"):
+                results = await self.bot.youtube.search_soundcloud(query[3:].strip())
+                if not results:
+                    await interaction.followup.send(
+                        "🔍 No SoundCloud results found.", ephemeral=True
+                    )
+                    return
+                picker = SearchPickerView(
+                    self, player, results, requester, timeout=self.search_timeout
+                )
+                await interaction.followup.send(
+                    embed=_picker_embed(results, f"sc: {query[3:]}"), view=picker, ephemeral=True
+                )
+                picker.message = await interaction.original_response()
+                await picker.wait()
             else:
                 results = await self.bot.youtube.search(query)
                 if not results:
@@ -396,6 +422,17 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         applied = player.set_volume(percent / 100)
         player.note_event(f"🔊 {name} set volume to {round(applied * 100)}%")
         return round(applied * 100)
+
+    async def act_seek(self, player: GuildPlayer, name: str, delta: float) -> str | None:
+        if player.current is None or not player.is_active:
+            return "Nothing is playing."
+        target = player.position + delta
+        applied = player.request_seek(target)
+        direction = "⏩" if delta > 0 else "⏪"
+        player.note_event(
+            f"{direction} {name} seeked to {format_seconds(applied)}"
+        )
+        return None
 
     async def act_lyrics(self, interaction: discord.Interaction) -> None:
         player = self.players.get(interaction.guild_id)
@@ -540,6 +577,27 @@ class MusicCog(BaseCog, commands.GroupCog, name="music"):
         logger.info("Skipped: %s", ", ".join(t.title for t in skipped))
         await interaction.response.send_message(
             f"⏭ Skipped {len(skipped)} track(s)", ephemeral=True
+        )
+
+    @app_commands.command(
+        name="seek", description="⏩ Jump to a position in the current track."
+    )
+    @app_commands.describe(seconds="Target position in seconds (e.g. 90 for 1:30)")
+    @channel_allowed(__file__)
+    @app_commands.guild_only()
+    async def seek(
+        self, interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 7200]
+    ) -> None:
+        player = self.players.get(interaction.guild_id)
+        if not player or player.current is None:
+            await interaction.response.send_message("🔇 Nothing is playing.", ephemeral=True)
+            return
+        applied = player.request_seek(float(seconds))
+        player.note_event(
+            f"⏩ {interaction.user.display_name} seeked to {format_seconds(applied)}"
+        )
+        await interaction.response.send_message(
+            f"⏩ Seeked to {format_seconds(applied)}", ephemeral=True
         )
 
     @app_commands.command(name="queue", description="📜 Show the queue on the card.")
@@ -717,9 +775,13 @@ def _picker_embed(results: list[Track], query: str) -> discord.Embed:
 
 
 def _playlist_embed(tracks: list[Track]) -> discord.Embed:
+    total = sum(t.duration or 0 for t in tracks)
     embed = discord.Embed(
         title="📜 Playlist Selection",
-        description=f"Found {len(tracks)} tracks in playlist.\n\nSelect which tracks to add:",
+        description=(
+            f"Found {len(tracks)} tracks • {format_seconds(total)} total.\n\n"
+            "Select which tracks to add:"
+        ),
         color=EMBED_COLOR,
     )
     embed.add_field(

@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import random
+import re
 import time
 from collections import Counter, deque
 from pathlib import Path
@@ -29,6 +30,8 @@ MAX_CONSECUTIVE_FAILURES = 5
 VOLUME_GAIN = 0.2
 
 MAX_VOLUME = 1.5
+
+SEEK_STEP = 15.0
 
 LOOP_MODES = ("off", "track", "queue")
 
@@ -59,7 +62,6 @@ class GuildPlayer:
         self.current: Track | None = None
         self.loop_mode: str = "off"
         self.volume: float = cog.default_volume
-        self.restored = 0
         self.events: deque[str] = deque(maxlen=EVENT_LIMIT)
         self.tracks_played = 0
         self.listen_seconds = 0.0
@@ -67,12 +69,18 @@ class GuildPlayer:
         self.skips: Counter[str] = Counter()
         self.page: str = "now"
         self.queue_page = 0
+        self.mix_url: str | None = None
+        self._mix_loading = False
+        self._mix_seen: set[str] = set()
+        self._mix_task: asyncio.Task[None] | None = None
+        self._mix_misses = 0
         self.card_message: discord.Message | None = None
         self.card_view: discord.ui.View | None = None
         self.card_dirty = True
         self.last_card_edit = 0.0
         self._position = 0.0
         self._play_started: float | None = None
+        self._seek_target: float | None = None
         self._lock = asyncio.Lock()
         self._session = 0
         self._stopping = False
@@ -140,6 +148,7 @@ class GuildPlayer:
 
     def clear_queue(self) -> None:
         self.queue.clear()
+        self.mix_url = None
         with contextlib.suppress(OSError):
             self._queue_file.unlink(missing_ok=True)
         self.touch_card()
@@ -194,6 +203,97 @@ class GuildPlayer:
         if self._advance_task is None or self._advance_task.done():
             self._advance_task = asyncio.create_task(self.advance())
 
+    def request_seek(self, target: float) -> float:
+        duration = self.current.duration if self.current else None
+        target = max(0.0, target)
+        if duration:
+            target = min(target, max(duration - 1.0, 0.0))
+        self._seek_target = target
+        self._session += 1
+        if self.is_active:
+            self.voice.stop()
+        self.kick()
+        self.touch_card()
+        return target
+
+    @staticmethod
+    def _track_key(track: Track) -> str:
+        match = re.search(r"[?&]v=([\w-]+)", track.page_url)
+        return match.group(1) if match else track.page_url
+
+    def start_mix(self, url: str, tracks: list[Track]) -> None:
+        self.mix_url = url
+        self._mix_misses = 0
+        for track in tracks:
+            self._mix_seen.add(self._track_key(track))
+
+    def stop_mix(self) -> None:
+        self.mix_url = None
+        self._mix_loading = False
+        self.touch_card()
+
+    def toggle_mix(self, name: str) -> str | None:
+        if self.mix_url is not None:
+            self.stop_mix()
+            self.note_event(f"📻 {name} stopped the mix")
+            return None
+        if self.current is None:
+            return "Nothing is playing — start a track first."
+        match = re.search(r"[?&]v=([\w-]+)", self.current.page_url)
+        if not match:
+            return "Radio works with YouTube tracks only."
+        video_id = match.group(1)
+        self.mix_url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+        self._mix_misses = 0
+        self.note_event(f"📻 {name} started the mix")
+        if not self.is_active and not self.queue:
+            self._schedule_mix_fetch()
+        self.touch_card()
+        return None
+
+    def _schedule_mix_fetch(self) -> None:
+        if self._mix_task and not self._mix_task.done():
+            return
+        self._mix_loading = True
+        self.touch_card()
+        self._mix_task = asyncio.create_task(self._fetch_mix_batch())
+
+    async def _fetch_mix_batch(self) -> None:
+        try:
+            self.note_event("📻 Loading more from mix…")
+            for _ in range(3):
+                try:
+                    async with asyncio.timeout(self.cog.resolve_timeout):
+                        tracks = await self.cog.bot.youtube.playlist(self.mix_url)
+                except Exception as exc:
+                    logger.warning("Mix fetch failed for %r: %s", self.mix_url, exc)
+                    tracks = []
+                fresh: list[Track] = []
+                for track in tracks:
+                    key = self._track_key(track)
+                    if key in self._mix_seen:
+                        continue
+                    self._mix_seen.add(key)
+                    fresh.append(track)
+                    if len(self.queue) + len(fresh) >= self.cog.max_queue:
+                        break
+                if fresh:
+                    self._mix_misses = 0
+                    for track in fresh:
+                        track.requester = "📻 Mix"
+                    self.queue.extend(fresh)
+                    self.save_queue()
+                    self.touch_card()
+                    self.kick()
+                    return
+                self._mix_misses += 1
+            self.mix_url = None
+            self.note_event("📻 Mix exhausted")
+            self._schedule_idle()
+        finally:
+            self._mix_loading = False
+            self.touch_card()
+
     def stop_current(self, *, record: bool = True) -> Track | None:
         track = self.current
         if record:
@@ -213,7 +313,8 @@ class GuildPlayer:
             failures = 0
             while not self._stopping and not self.is_active:
                 previous = self.current
-                if self.loop_mode == "track" and self.current is not None:
+                seeking = self._seek_target is not None and previous is not None
+                if seeking or (self.loop_mode == "track" and self.current is not None):
                     track = self.current
                 elif self.queue:
                     if self.loop_mode == "queue" and previous is not None:
@@ -226,7 +327,10 @@ class GuildPlayer:
                     self.listen_seconds += self._position
                     self.current = None
                     self.touch_card()
-                    self._schedule_idle()
+                    if self.mix_url is not None:
+                        self._schedule_mix_fetch()
+                    else:
+                        self._schedule_idle()
                     return
 
                 if previous is not None and previous is not track:
@@ -237,10 +341,17 @@ class GuildPlayer:
                 self.current = track
                 try:
                     async with asyncio.timeout(self.cog.resolve_timeout):
-                        stream_url = await self.cog.bot.youtube.stream_url(track.page_url)
+                        stream_url, duration = await self.cog.bot.youtube.resolve(
+                            track.page_url
+                        )
+                        if track.duration is None and duration:
+                            track.duration = duration
+                        before = FFMPEG_OPTIONS["before_options"]
+                        if seeking:
+                            before += f" -ss {int(self._seek_target)}"
                         pcm = discord.FFmpegPCMAudio(
                             stream_url,
-                            before_options=FFMPEG_OPTIONS["before_options"],
+                            before_options=before,
                             options=FFMPEG_OPTIONS["options"],
                         )
                         source = discord.PCMVolumeTransformer(
@@ -248,6 +359,7 @@ class GuildPlayer:
                         )
                 except Exception as exc:
                     failures += 1
+                    self._seek_target = None
                     logger.warning("Failed to start %r: %s", track.title, exc)
                     self.current = None
                     self.note_event(f"⚠️ Failed: {track.title[:40]}")
@@ -257,10 +369,15 @@ class GuildPlayer:
                         return
                     continue
 
-                self.tracks_played += 1
-                self._reset_clock()
-                if self.page == "queue":
-                    self.page = "now"
+                if seeking:
+                    self._position = self._seek_target
+                    self._seek_target = None
+                    self._play_started = time.monotonic()
+                else:
+                    self.tracks_played += 1
+                    self._reset_clock()
+                    if self.page == "queue":
+                        self.page = "now"
                 self.touch_card()
                 self._start_source(source)
                 return
@@ -296,9 +413,19 @@ class GuildPlayer:
         self.listen_seconds += self._position
         await self.cog.render_tombstone(self)
         self.card_message = None
-        if self.current is not None:
-            self.queue.appendleft(self.current)
-            self.current = None
+        self.current = None
+        self.queue.clear()
+        self.history.clear()
+        self.loop_mode = "off"
+        self.volume = self.cog.default_volume
+        self.mix_url = None
+        self._mix_seen.clear()
+        self._mix_loading = False
+        if self._mix_task and not self._mix_task.done():
+            self._mix_task.cancel()
+            self._mix_task = None
+        with contextlib.suppress(OSError):
+            self._queue_file.unlink(missing_ok=True)
         if self.is_active:
             with contextlib.suppress(Exception):
                 self.voice.stop()
@@ -324,9 +451,6 @@ class GuildPlayer:
         card = data.get("card")
         if isinstance(card, dict) and card.get("channel") and card.get("message"):
             self.stale_card = card
-        self.restored = len(self.queue)
-        if self.restored:
-            logger.info("Restored %d queued track(s) for %s", self.restored, self.guild.name)
 
     def save_queue(self) -> None:
         payload: dict = {
