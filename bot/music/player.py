@@ -414,30 +414,32 @@ class GuildPlayer:
             self.card_view = None
         self._pause_clock()
         self.listen_seconds += self._position
-        await self.cog.render_tombstone(self)
-        self.card_message = None
-        self.current = None
-        self.queue.clear()
-        self.history.clear()
-        self.loop_mode = "off"
-        self.volume = self.cog.default_volume
-        self.mix_url = None
-        self._mix_seen.clear()
-        self._mix_loading = False
-        if self._mix_task and not self._mix_task.done():
-            self._mix_task.cancel()
-            self._mix_task = None
-        with contextlib.suppress(OSError):
-            self._queue_file.unlink(missing_ok=True)
-        if self.is_active:
-            with contextlib.suppress(Exception):
-                self.voice.stop()
         try:
-            await asyncio.wait_for(self.voice.disconnect(force=True), timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning("Voice disconnect timeout in %s", self.guild.name)
-        except Exception as exc:
-            logger.warning("Voice disconnect failed in %s: %s", self.guild.name, exc)
+            await self.cog.render_tombstone(self)
+        finally:
+            self.card_message = None
+            self.current = None
+            self.queue.clear()
+            self.history.clear()
+            self.loop_mode = "off"
+            self.volume = self.cog.default_volume
+            self.mix_url = None
+            self._mix_seen.clear()
+            self._mix_loading = False
+            if self._mix_task and not self._mix_task.done():
+                self._mix_task.cancel()
+                self._mix_task = None
+            with contextlib.suppress(OSError):
+                self._queue_file.unlink(missing_ok=True)
+            if self.is_active:
+                with contextlib.suppress(Exception):
+                    self.voice.stop()
+            try:
+                await asyncio.wait_for(self.voice.disconnect(force=True), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Voice disconnect timeout in %s", self.guild.name)
+            except Exception as exc:
+                logger.warning("Voice disconnect failed in %s: %s", self.guild.name, exc)
 
     def _load_queue(self) -> None:
         try:
@@ -479,9 +481,10 @@ class GuildPlayer:
         self._idle_task = asyncio.create_task(self._idle_disconnect())
 
     def _cancel_idle(self) -> None:
-        if self._idle_task and not self._idle_task.done():
-            self._idle_task.cancel()
+        task = self._idle_task
         self._idle_task = None
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
 
     async def _idle_disconnect(self) -> None:
         try:
