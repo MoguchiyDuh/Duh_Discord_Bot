@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/moguchiyduh/duh-discord-bot:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:

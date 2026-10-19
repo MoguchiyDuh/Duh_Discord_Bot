@@ -27,8 +27,10 @@ cp .env.example .env
 Fill in `DISCORD_TOKEN` in `.env`, then:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+The image is built by GitHub Actions and pulled from GHCR (`ghcr.io/moguchiyduh/duh-discord-bot`). Pushes to `master` deploy automatically; build locally with `docker build -t ghcr.io/moguchiyduh/duh-discord-bot .`.
 
 The bot creates a `Commands` category with its command channels (`🛠️┃bot-commands`, `🎮┃minigames`, `🎤┃media-hub`) and a `Temporary Channels` category with the `Join to Create` voice hub on join. Slash commands only work in those channels.
 
