@@ -13,6 +13,7 @@ Slash commands only.
 - **PO Token provider**: ships with a `bgutil-ytdlp-pot-provider` sidecar so YouTube extraction keeps working from VPS IPs.
 - **Minigames**: Chess, Tic-Tac-Toe, Connect Four in private threads.
 - **Temporary channels**: "Join to Create" voice hub with owner controls (lock, limit, rename, kick, mute).
+- **Self-assignable roles**: `/roles setup` (admin) creates the roles and a `#roles` panel; members pick programme, year, OS, distro, languages, areas, and interests from private menus.
 - **Weather**: current conditions via Open-Meteo (no API key).
 - **Utilities**: dice, coinflip, password generator, colors, lorem ipsum, server stats.
 

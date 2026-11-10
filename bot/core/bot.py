@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from bot.services.channels import ChannelService
 from bot.services.lyrics import LyricsService
+from bot.services.roles import RoleService
 from bot.services.youtube import YouTube
 
 if TYPE_CHECKING:
@@ -25,12 +26,14 @@ class DuhBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
         self.channels: ChannelService | None = None
+        self.roles: RoleService | None = None
         self.youtube: YouTube | None = None
         self.lyrics: LyricsService | None = None
         self._presence_index = 0
 
     async def setup_hook(self) -> None:
         self.channels = ChannelService(self)
+        self.roles = RoleService(self)
         self.youtube = YouTube(self.settings)
         self.lyrics = LyricsService(self.settings)
 
